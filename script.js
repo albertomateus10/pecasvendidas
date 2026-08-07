@@ -176,7 +176,7 @@ let charts = { periodo: null, valorItem: null, loja: null, modelo: null, vendedo
 /* placas excluídas */
 const excludedPlates = new Set();
 
-const state = { search: '', Loja: [], Vendedor: [], Modelo: [], Mes: [], Nota: [], CodItem: [], GrupoInterno: [] };
+const state = { search: '', Loja: [], Vendedor: [], Modelo: [], Mes: [], Nota: [], CodItem: [], GrupoInterno: [], Dias: [] };
 const sortState = { key: null, type: null, dir: 'desc' };
 
 
@@ -273,10 +273,11 @@ const pillInstances = {
     Nota: new MultiPill({ label: 'Número da Nota', getter: () => state.Nota, setter: v => state.Nota = v }),
     CodItem: new MultiPill({ label: 'Cód. Item', getter: () => state.CodItem, setter: v => state.CodItem = v }),
     GrupoInterno: new MultiPill({ label: 'Grupo Interno', getter: () => state.GrupoInterno, setter: v => state.GrupoInterno = v }),
+    Dias: new MultiPill({ label: 'Dias', getter: () => state.Dias, setter: v => state.Dias = v }),
 };
 (function mountPills() {
     const holder = document.getElementById('filters');
-    ['Mes', 'Loja', 'Vendedor', 'Modelo', 'Nota', 'CodItem', 'GrupoInterno'].forEach(k => {
+    ['Mes', 'Loja', 'Vendedor', 'Modelo', 'Nota', 'CodItem', 'GrupoInterno', 'Dias'].forEach(k => {
         holder.appendChild(pillInstances[k].el);
     });
 })();
@@ -400,6 +401,16 @@ function parseRows(headers, data) {
     pillInstances.CodItem.setOptions(allData.map(x => x.CodItem));
     pillInstances.GrupoInterno.setOptions(allData.map(x => x.GrupoInterno));
 
+    /* Filtro Dias — faixas fixas baseadas na coluna C */
+    const FAIXAS_DIAS = [
+        '0 a 90',
+        '91 a 180',
+        '181 a 365',
+        '366 a 1000',
+        '1001 ou mais',
+    ];
+    pillInstances.Dias.setOptions(FAIXAS_DIAS, { keepOrder: true });
+
     const orderMes = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
     const mesesUnicos = [...new Set(allData
         .map(x => x.MesNome)
@@ -422,7 +433,7 @@ document.getElementById('clearAll').addEventListener('click', () => {
     withStableScroll(() => {
         state.search = ''; document.getElementById('q').value = '';
         state.Loja = []; state.Vendedor = []; state.Modelo = []; state.Mes = [];
-        state.Nota = []; state.CodItem = []; state.GrupoInterno = [];
+        state.Nota = []; state.CodItem = []; state.GrupoInterno = []; state.Dias = [];
         Object.values(pillInstances).forEach(p => { p.setter([]); p.render(); p.sync(); });
         applyFilters();
     });
@@ -437,11 +448,20 @@ function applyFilters() {
         const notaOk = state.Nota.length === 0 || state.Nota.includes(r.Nota);
         const codOk = state.CodItem.length === 0 || state.CodItem.includes(r.CodItem);
         const grupoOk = state.GrupoInterno.length === 0 || state.GrupoInterno.includes(r.GrupoInterno);
+        const diasOk = state.Dias.length === 0 || state.Dias.some(faixa => {
+            const g = +r.Giro || 0;
+            if (faixa === '0 a 90')       return g >= 0 && g <= 90;
+            if (faixa === '91 a 180')     return g >= 91 && g <= 180;
+            if (faixa === '181 a 365')    return g >= 181 && g <= 365;
+            if (faixa === '366 a 1000')   return g >= 366 && g <= 1000;
+            if (faixa === '1001 ou mais') return g >= 1001;
+            return false;
+        });
 
         const q = state.search;
         const qOk = !q || [r.CodItem, r.Descricao].some(vv => (vv || '').toString().toLowerCase().includes(q));
 
-        return lojaOk && vendOk && modOk && mesOk && notaOk && codOk && grupoOk && qOk;
+        return lojaOk && vendOk && modOk && mesOk && notaOk && codOk && grupoOk && diasOk && qOk;
     });
     renderKpiGroups();
     renderTable(sortRows([...filtered]));
