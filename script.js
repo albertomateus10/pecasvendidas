@@ -176,7 +176,7 @@ let charts = { periodo: null, valorItem: null, loja: null, modelo: null, vendedo
 /* placas excluídas */
 const excludedPlates = new Set();
 
-const state = { search: '', Loja: [], Vendedor: [], Modelo: [], Mes: [], Giro: [], Nota: [], CodItem: [], GrupoInterno: [] };
+const state = { search: '', Loja: [], Vendedor: [], Modelo: [], Mes: [], Nota: [], CodItem: [], GrupoInterno: [] };
 const sortState = { key: null, type: null, dir: 'desc' };
 
 
@@ -270,14 +270,13 @@ const pillInstances = {
     Loja: new MultiPill({ label: 'Loja', getter: () => state.Loja, setter: v => state.Loja = v }),
     Vendedor: new MultiPill({ label: 'Vendedor', getter: () => state.Vendedor, setter: v => state.Vendedor = v }),
     Modelo: new MultiPill({ label: 'Peça', getter: () => state.Modelo, setter: v => state.Modelo = v }),
-    Giro: new MultiPill({ label: 'Giro', getter: () => state.Giro, setter: v => state.Giro = v }),
     Nota: new MultiPill({ label: 'Número da Nota', getter: () => state.Nota, setter: v => state.Nota = v }),
     CodItem: new MultiPill({ label: 'Cód. Item', getter: () => state.CodItem, setter: v => state.CodItem = v }),
     GrupoInterno: new MultiPill({ label: 'Grupo Interno', getter: () => state.GrupoInterno, setter: v => state.GrupoInterno = v }),
 };
 (function mountPills() {
     const holder = document.getElementById('filters');
-    ['Mes', 'Loja', 'Vendedor', 'Modelo', 'Giro', 'Nota', 'CodItem', 'GrupoInterno'].forEach(k => {
+    ['Mes', 'Loja', 'Vendedor', 'Modelo', 'Nota', 'CodItem', 'GrupoInterno'].forEach(k => {
         holder.appendChild(pillInstances[k].el);
     });
 })();
@@ -382,7 +381,7 @@ function parseRows(headers, data) {
             Loja: mapLoja(r[0]),
             DataVenda: vendaCell ? (typeof vendaCell === 'number' ? parseDateExcel(vendaCell).toLocaleDateString('pt-BR') : String(vendaCell)) : '—',
             Nota: get(idx.nota) ?? '—',
-            Giro: String(get(idx.giro) ?? '—').trim() || '—',
+            Giro: toNumberBR(get(idx.giro)),
             CodItem: get(idx.codItem) ?? '—',
             QtdPecas: toNumberBR(get(idx.qtdPecas)),
             GrupoInterno: String(get(idx.grupoInterno) ?? '—').trim() || '—',
@@ -397,7 +396,6 @@ function parseRows(headers, data) {
     pillInstances.Loja.setOptions(allData.map(x => x.Loja));
     pillInstances.Vendedor.setOptions(allData.map(x => x.Vendedor));
     pillInstances.Modelo.setOptions(allData.map(x => x.Descricao));
-    pillInstances.Giro.setOptions(allData.map(x => x.Giro));
     pillInstances.Nota.setOptions(allData.map(x => x.Nota));
     pillInstances.CodItem.setOptions(allData.map(x => x.CodItem));
     pillInstances.GrupoInterno.setOptions(allData.map(x => x.GrupoInterno));
@@ -424,7 +422,7 @@ document.getElementById('clearAll').addEventListener('click', () => {
     withStableScroll(() => {
         state.search = ''; document.getElementById('q').value = '';
         state.Loja = []; state.Vendedor = []; state.Modelo = []; state.Mes = [];
-        state.Nota = []; state.CodItem = []; state.GrupoInterno = []; state.Giro = [];
+        state.Nota = []; state.CodItem = []; state.GrupoInterno = [];
         Object.values(pillInstances).forEach(p => { p.setter([]); p.render(); p.sync(); });
         applyFilters();
     });
@@ -439,12 +437,11 @@ function applyFilters() {
         const notaOk = state.Nota.length === 0 || state.Nota.includes(r.Nota);
         const codOk = state.CodItem.length === 0 || state.CodItem.includes(r.CodItem);
         const grupoOk = state.GrupoInterno.length === 0 || state.GrupoInterno.includes(r.GrupoInterno);
-        const giroOk = state.Giro.length === 0 || state.Giro.includes(r.Giro);
 
         const q = state.search;
         const qOk = !q || [r.CodItem, r.Descricao].some(vv => (vv || '').toString().toLowerCase().includes(q));
 
-        return lojaOk && vendOk && modOk && mesOk && notaOk && codOk && grupoOk && giroOk && qOk;
+        return lojaOk && vendOk && modOk && mesOk && notaOk && codOk && grupoOk && qOk;
     });
     renderKpiGroups();
     renderTable(sortRows([...filtered]));
@@ -466,8 +463,11 @@ function calcKPIs(rows) {
     });
     const itemMaisVendido = Object.entries(descCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
 
+    const giroVals = rows.map(r => +r.Giro || 0).filter(v => v > 0);
+    const giroMedio = giroVals.length ? giroVals.reduce((a, b) => a + b, 0) / giroVals.length : 0;
+
     return {
-        n, faturamentoTotal, qtdTotal, ticketMedio, itensPorVenda, itemMaisVendido
+        n, faturamentoTotal, qtdTotal, ticketMedio, itensPorVenda, itemMaisVendido, giroMedio
     };
 }
 
@@ -530,6 +530,7 @@ function renderKpiGroups() {
     <div class="kpi"><div class="lab">Quantidade de Itens</div><div class="val">${NUM(k.n)}</div></div>
     <div class="kpi"><div class="lab">Faturamento Total</div><div class="val">${BRL(k.faturamentoTotal)}</div></div>
     <div class="kpi"><div class="lab">Ticket Médio (Item)</div><div class="val">${BRL(k.ticketMedio)}</div></div>
+    <div class="kpi"><div class="lab">Giro Médio</div><div class="val">${k.giroMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
     <div class="kpi"><div class="lab">Item Mais Vendido</div><div class="val" style="font-size: 1rem;">${k.itemMaisVendido}</div></div>
 </div>
 </div>
