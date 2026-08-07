@@ -176,7 +176,7 @@ let charts = { periodo: null, valorItem: null, loja: null, modelo: null, vendedo
 /* placas excluídas */
 const excludedPlates = new Set();
 
-const state = { search: '', Loja: [], Vendedor: [], Modelo: [], Mes: [], Nota: [], CodItem: [] };
+const state = { search: '', Loja: [], Vendedor: [], Modelo: [], Mes: [], Giro: [], Nota: [], CodItem: [], GrupoInterno: [] };
 const sortState = { key: null, type: null, dir: 'desc' };
 
 
@@ -270,12 +270,14 @@ const pillInstances = {
     Loja: new MultiPill({ label: 'Loja', getter: () => state.Loja, setter: v => state.Loja = v }),
     Vendedor: new MultiPill({ label: 'Vendedor', getter: () => state.Vendedor, setter: v => state.Vendedor = v }),
     Modelo: new MultiPill({ label: 'Peça', getter: () => state.Modelo, setter: v => state.Modelo = v }),
+    Giro: new MultiPill({ label: 'Giro', getter: () => state.Giro, setter: v => state.Giro = v }),
     Nota: new MultiPill({ label: 'Número da Nota', getter: () => state.Nota, setter: v => state.Nota = v }),
     CodItem: new MultiPill({ label: 'Cód. Item', getter: () => state.CodItem, setter: v => state.CodItem = v }),
+    GrupoInterno: new MultiPill({ label: 'Grupo Interno', getter: () => state.GrupoInterno, setter: v => state.GrupoInterno = v }),
 };
 (function mountPills() {
     const holder = document.getElementById('filters');
-    ['Mes', 'Loja', 'Vendedor', 'Modelo', 'Nota', 'CodItem'].forEach(k => {
+    ['Mes', 'Loja', 'Vendedor', 'Modelo', 'Giro', 'Nota', 'CodItem', 'GrupoInterno'].forEach(k => {
         holder.appendChild(pillInstances[k].el);
     });
 })();
@@ -365,6 +367,9 @@ function parseRows(headers, data) {
         precoFinal: findCol(headers, ['Preço Final', 'Preco Final', 'Valor', 'PREÇO FINAL']),
         venda: findCol(headers, ['Venda', 'Data Venda', 'Data', 'DATA']),
         nota: findCol(headers, ['Nota', 'NF', 'NOTA']),
+        grupoInterno: 18, /* coluna S (índice 18) */
+        qtdPecas: 7,     /* coluna H (índice 7) */
+        giro: 2,         /* coluna C (índice 2) */
     };
 
     allData = data.map(r => {
@@ -377,7 +382,10 @@ function parseRows(headers, data) {
             Loja: mapLoja(r[0]),
             DataVenda: vendaCell ? (typeof vendaCell === 'number' ? parseDateExcel(vendaCell).toLocaleDateString('pt-BR') : String(vendaCell)) : '—',
             Nota: get(idx.nota) ?? '—',
+            Giro: String(get(idx.giro) ?? '—').trim() || '—',
             CodItem: get(idx.codItem) ?? '—',
+            QtdPecas: toNumberBR(get(idx.qtdPecas)),
+            GrupoInterno: String(get(idx.grupoInterno) ?? '—').trim() || '—',
             Descricao: get(idx.descricao) ?? '—',
             Quantidade: toNumberBR(get(idx.quantidade)),
             PrecoFinal: toNumberBR(get(idx.precoFinal)),
@@ -389,8 +397,10 @@ function parseRows(headers, data) {
     pillInstances.Loja.setOptions(allData.map(x => x.Loja));
     pillInstances.Vendedor.setOptions(allData.map(x => x.Vendedor));
     pillInstances.Modelo.setOptions(allData.map(x => x.Descricao));
+    pillInstances.Giro.setOptions(allData.map(x => x.Giro));
     pillInstances.Nota.setOptions(allData.map(x => x.Nota));
     pillInstances.CodItem.setOptions(allData.map(x => x.CodItem));
+    pillInstances.GrupoInterno.setOptions(allData.map(x => x.GrupoInterno));
 
     const orderMes = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
     const mesesUnicos = [...new Set(allData
@@ -414,7 +424,7 @@ document.getElementById('clearAll').addEventListener('click', () => {
     withStableScroll(() => {
         state.search = ''; document.getElementById('q').value = '';
         state.Loja = []; state.Vendedor = []; state.Modelo = []; state.Mes = [];
-        state.Nota = []; state.CodItem = [];
+        state.Nota = []; state.CodItem = []; state.GrupoInterno = []; state.Giro = [];
         Object.values(pillInstances).forEach(p => { p.setter([]); p.render(); p.sync(); });
         applyFilters();
     });
@@ -428,11 +438,13 @@ function applyFilters() {
         const mesOk = state.Mes.length === 0 || state.Mes.includes(r.MesNome);
         const notaOk = state.Nota.length === 0 || state.Nota.includes(r.Nota);
         const codOk = state.CodItem.length === 0 || state.CodItem.includes(r.CodItem);
+        const grupoOk = state.GrupoInterno.length === 0 || state.GrupoInterno.includes(r.GrupoInterno);
+        const giroOk = state.Giro.length === 0 || state.Giro.includes(r.Giro);
 
         const q = state.search;
         const qOk = !q || [r.CodItem, r.Descricao].some(vv => (vv || '').toString().toLowerCase().includes(q));
 
-        return lojaOk && vendOk && modOk && mesOk && notaOk && codOk && qOk;
+        return lojaOk && vendOk && modOk && mesOk && notaOk && codOk && grupoOk && giroOk && qOk;
     });
     renderKpiGroups();
     renderTable(sortRows([...filtered]));
@@ -551,6 +563,8 @@ function renderTable(rows) {
     <td>${r.DataVenda || '—'}</td>
     <td>${r.Nota || '—'}</td>
     <td>${r.CodItem || '—'}</td>
+    <td>${NUM(r.QtdPecas)}</td>
+    <td>${r.GrupoInterno || '—'}</td>
     <td>${r.Descricao || '—'}</td>
     <td>${NUM(r.Quantidade)}</td>
     <td>${BRL(r.PrecoFinal)}</td>
