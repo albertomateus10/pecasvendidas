@@ -1,3 +1,8 @@
+/* ===== Registro do Plugin de Rótulos do Chart.js ===== */
+if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
+    Chart.register(ChartDataLabels);
+}
+
 /* ===== Helpers UI ===== */
 function showError(msg) { const el = document.getElementById('alertError'); el.querySelector('.msg').textContent = msg; el.classList.add('show'); }
 function showWarn(msg) { const el = document.getElementById('alertWarn'); el.querySelector('.msg').textContent = msg; el.classList.add('show'); }
@@ -858,6 +863,11 @@ function renderCharts(rows) {
         options: { 
             ...commonOpts, 
             onClick: (evt, elements) => onChartBarClick(evt, elements, charts.periodo, 'periodo'),
+            scales: {
+                y: {
+                    grace: '15%'
+                }
+            },
             plugins: { 
                 ...commonOpts.plugins, 
                 title: { display: true, text: 'Faturamento por Período (Mês)' },
@@ -946,15 +956,34 @@ function renderCharts(rows) {
     if (charts.loja) charts.loja.destroy();
     charts.loja = new Chart(document.getElementById('lojaChart').getContext('2d'), {
         type: 'bar',
+        plugins: [ChartDataLabels],
         data: { labels: lojaArr.map(x => x[0]), datasets: [{ label: 'Vendas', data: lojaArr.map(x => x[1].valor), borderWidth: 2, borderRadius: 8 }] },
         options: { 
             ...commonOpts, 
             onClick: (evt, elements) => onChartBarClick(evt, elements, charts.loja, 'loja'),
+            scales: {
+                y: {
+                    grace: '20%'
+                }
+            },
             plugins: { 
                 ...commonOpts.plugins, 
                 legend: { display: false }, 
                 title: { display: true, text: 'Vendas por Loja (Faturamento R$)' }, 
-                datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) },
+                datalabels: {
+                    display: true,
+                    align: 'end',
+                    anchor: 'end',
+                    offset: 4,
+                    color: '#1e3a8a',
+                    font: { weight: 'bold', size: 11 },
+                    formatter: (v, ctx) => {
+                        const data = ctx.dataset.data || [];
+                        const total = data.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+                        const pct = ((v / total) * 100).toFixed(1).replace('.', ',');
+                        return v > 0 ? `${BRL(v)} (${pct}%)` : 'R$ 0,00';
+                    }
+                },
                 tooltip: {
                     callbacks: {
                         label: (context) => {
@@ -1063,6 +1092,7 @@ function renderCharts(rows) {
     if (charts.diasEstoque) charts.diasEstoque.destroy();
     charts.diasEstoque = new Chart(document.getElementById('diasEstoqueChart').getContext('2d'), {
         type: 'bar',
+        plugins: [ChartDataLabels],
         data: { 
             labels: labelsDias, 
             datasets: [{ 
@@ -1077,19 +1107,27 @@ function renderCharts(rows) {
         options: { 
             ...commonOpts, 
             onClick: (evt, elements) => onChartBarClick(evt, elements, charts.diasEstoque, 'diasEstoque'),
+            scales: {
+                y: {
+                    grace: '20%'
+                }
+            },
             plugins: { 
                 ...commonOpts.plugins, 
                 title: { display: true, text: 'Venda de Peças por Dias de Estoque' },
                 datalabels: {
                     display: true,
-                    backgroundColor: '#3b82f6',
-                    borderRadius: 4,
-                    color: '#fff',
-                    font: { weight: 'bold', size: 11 },
-                    align: 'top',
+                    align: 'end',
                     anchor: 'end',
-                    padding: 6,
-                    formatter: (v) => BRL(v)
+                    offset: 4,
+                    color: '#1e3a8a',
+                    font: { weight: 'bold', size: 11 },
+                    formatter: (v, ctx) => {
+                        const data = ctx.dataset.data || [];
+                        const total = data.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+                        const pct = ((v / total) * 100).toFixed(1).replace('.', ',');
+                        return v > 0 ? `${BRL(v)} (${pct}%)` : 'R$ 0,00';
+                    }
                 },
                 tooltip: {
                     callbacks: {
