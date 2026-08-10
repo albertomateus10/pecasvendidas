@@ -6,7 +6,7 @@ function showWarn(msg) { const el = document.getElementById('alertWarn'); el.que
 const $ = s => document.querySelector(s);
 const BRL = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(+v || 0);
 const NUM = v => new Intl.NumberFormat('pt-BR').format(+v || 0);
-const PCT = v => (Number.isFinite(v) ? v.toFixed(2).replace('.', ',') : '—') + '%';
+const PCT = v => (Number.isFinite(v) ? v.toFixed(1).replace('.', ',') : '—') + '%';
 
 /* ===== Scroll estável ===== */
 function withStableScroll(fn) {
@@ -382,7 +382,7 @@ function parseRows(headers, data) {
             Loja: mapLoja(r[0]),
             DataVenda: vendaCell ? (typeof vendaCell === 'number' ? parseDateExcel(vendaCell).toLocaleDateString('pt-BR') : String(vendaCell)) : '—',
             Nota: get(idx.nota) ?? '—',
-            Giro: toNumberBR(get(idx.giro)),
+            Giro: (() => { const g = toNumberBR(get(idx.giro)); return g >= 46000 ? 1001 : g; })(),
             CodItem: get(idx.codItem) ?? '—',
             QtdPecas: toNumberBR(get(idx.qtdPecas)),
             GrupoInterno: String(get(idx.grupoInterno) ?? '—').trim() || '—',
@@ -550,7 +550,7 @@ function renderKpiGroups() {
     <div class="kpi"><div class="lab">Quantidade de Itens</div><div class="val">${NUM(k.n)}</div></div>
     <div class="kpi"><div class="lab">Faturamento Total</div><div class="val">${BRL(k.faturamentoTotal)}</div></div>
     <div class="kpi"><div class="lab">Ticket Médio (Item)</div><div class="val">${BRL(k.ticketMedio)}</div></div>
-    <div class="kpi"><div class="lab">Giro Médio</div><div class="val">${k.giroMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
+    <div class="kpi"><div class="lab">Giro Médio</div><div class="val">${k.giroMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</div></div>
     <div class="kpi"><div class="lab">Item Mais Vendido</div><div class="val" style="font-size: 1rem;">${k.itemMaisVendido}</div></div>
 </div>
 </div>
