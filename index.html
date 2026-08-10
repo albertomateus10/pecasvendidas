@@ -53,34 +53,55 @@
             </div>
         </div>
 
-        <div class="section table">
-            <table id="grid">
-                <thead>
-                    <tr>
-                        <th class="sortable" data-key="Vendedor" data-type="text">Vendedor <i
-                                class="fa-solid fa-sort sort"></i></th>
-                        <th class="sortable" data-key="Loja" data-type="text">Loja <i class="fa-solid fa-sort sort"></i>
-                        </th>
-                        <th class="sortable" data-key="DataVenda" data-type="text">Data Venda <i
-                                class="fa-solid fa-sort sort"></i></th>
-                        <th class="sortable" data-key="Nota" data-type="num">Número da Nota <i
-                                class="fa-solid fa-sort sort"></i></th>
-                        <th class="sortable" data-key="CodItem" data-type="num">Cód. Item <i
-                                class="fa-solid fa-sort sort"></i></th>
-                        <th class="sortable" data-key="QtdPecas" data-type="num">Quantidade de Peças <i
-                                class="fa-solid fa-sort sort"></i></th>
-                        <th class="sortable" data-key="GrupoInterno" data-type="text">Grupo Interno <i
-                                class="fa-solid fa-sort sort"></i></th>
-                        <th class="sortable" data-key="Descricao" data-type="text">Descrição <i
-                                class="fa-solid fa-sort sort"></i></th>
-                        <th class="sortable" data-key="Quantidade" data-type="num">Qtd <i
-                                class="fa-solid fa-sort sort"></i></th>
-                        <th class="sortable" data-key="PrecoFinal" data-type="num">Preço Final <i
-                                class="fa-solid fa-sort sort"></i></th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+        <div class="section table-section">
+            <div id="tableToggleBar" class="table-toggle-bar">
+                <div class="table-toggle-title">
+                    <i class="fa-solid fa-list-check"></i>
+                    <span>Informações das Peças</span>
+                    <span id="barFilterChip" class="bar-filter-chip" style="display: none;"></span>
+                </div>
+                <div class="table-toggle-actions">
+                    <button id="clearBarFilterBtn" class="clear-bar-btn" style="display: none;"><i class="fa-solid fa-xmark"></i> Limpar Filtro da Barra</button>
+                    <button id="toggleTableBtn" class="table-btn"><i class="fa-solid fa-folder-open"></i> Carregar Peças</button>
+                </div>
+            </div>
+
+            <div id="tablePlaceholder" class="table-placeholder">
+                <i class="fa-solid fa-chart-column placeholder-icon"></i>
+                <h3>Tabela de Peças Oculta para Alta Performance</h3>
+                <p>Clique em <strong>qualquer barra dos gráficos acima</strong> para carregar apenas as peças correspondentes, ou clique no botão <strong>Carregar Peças</strong> para ver todas.</p>
+            </div>
+
+            <div id="gridWrap" class="grid-wrap" style="display: none;">
+                <table id="grid">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-key="Vendedor" data-type="text">Vendedor <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                            <th class="sortable" data-key="Loja" data-type="text">Loja <i class="fa-solid fa-sort sort"></i>
+                            </th>
+                            <th class="sortable" data-key="DataVenda" data-type="text">Data Venda <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                            <th class="sortable" data-key="Nota" data-type="num">Número da Nota <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                            <th class="sortable" data-key="CodItem" data-type="num">Cód. Item <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                            <th class="sortable" data-key="QtdPecas" data-type="num">Quantidade de Peças <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                            <th class="sortable" data-key="GrupoInterno" data-type="text">Grupo Interno <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                            <th class="sortable" data-key="Descricao" data-type="text">Descrição <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                            <th class="sortable" data-key="Quantidade" data-type="num">Qtd <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                            <th class="sortable" data-key="PrecoFinal" data-type="num">Preço Final <i
+                                    class="fa-solid fa-sort sort"></i></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div id="tablePagination" class="pagination-wrap"></div>
+            </div>
         </div>
     </div>
 

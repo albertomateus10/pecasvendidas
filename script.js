@@ -179,6 +179,12 @@ const excludedPlates = new Set();
 const state = { search: '', Loja: [], Vendedor: [], Modelo: [], Mes: [], Nota: [], CodItem: [], GrupoInterno: [], Dias: [] };
 const sortState = { key: null, type: null, dir: 'desc' };
 
+/* ===== Estado da Tabela sob Demanda ===== */
+let tableLoaded = false;
+let barFilter = null; // { type: 'periodo'|'valorItem'|'modelo'|'loja'|'faixas'|'vendedorValor'|'diasEstoque', label: string }
+let currentPage = 1;
+const pageSize = 50;
+
 
 /* ===== Pílulas ===== */
 class MultiPill {
@@ -463,10 +469,130 @@ function applyFilters() {
 
         return lojaOk && vendOk && modOk && mesOk && notaOk && codOk && grupoOk && diasOk && qOk;
     });
+    currentPage = 1;
     renderKpiGroups();
-    renderTable(sortRows([...filtered]));
     renderCharts(filtered);
+    renderTableSection();
 }
+
+/* ===== Filtro de Barra dos Gráficos ===== */
+function filterByBar(rows, filter) {
+    if (!filter || !filter.label) return rows;
+    const { type, label } = filter;
+
+    return rows.filter(r => {
+        if (type === 'periodo') return r.MesNome === label;
+        if (type === 'valorItem' || type === 'modelo') return (r.Descricao || '—') === label;
+        if (type === 'loja') return (r.Loja || 'Não informado') === label;
+        if (type === 'vendedorValor') return (r.Vendedor || 'Não informado') === label;
+        if (type === 'faixas') {
+            const v = +r.PrecoFinal || 0;
+            if (label === 'Até R$ 50') return v <= 50;
+            if (label === 'R$ 50–200') return v > 50 && v <= 200;
+            if (label === 'R$ 200–500') return v > 200 && v <= 500;
+            if (label === 'R$ 500–1000') return v > 500 && v <= 1000;
+            if (label === 'R$ 1000+') return v > 1000;
+            return false;
+        }
+        if (type === 'diasEstoque') {
+            const g = +r.Giro || 0;
+            if (label === '0 a 90') return g >= 0 && g <= 90;
+            if (label === '91 a 180') return g >= 91 && g <= 180;
+            if (label === '181 a 365') return g >= 181 && g <= 365;
+            if (label === '366 a 1000') return g >= 366 && g <= 1000;
+            if (label === '1001 ou mais') return g >= 1001;
+            return false;
+        }
+        return true;
+    });
+}
+
+function renderTableSection() {
+    const chipEl = document.getElementById('barFilterChip');
+    const clearBtn = document.getElementById('clearBarFilterBtn');
+    const toggleBtn = document.getElementById('toggleTableBtn');
+    const placeholder = document.getElementById('tablePlaceholder');
+    const gridWrap = document.getElementById('gridWrap');
+
+    let currentRows = barFilter ? filterByBar(filtered, barFilter) : filtered;
+
+    if (barFilter && barFilter.label) {
+        chipEl.style.display = 'inline-block';
+        chipEl.textContent = `Filtrado por: ${barFilter.label} (${NUM(currentRows.length)} peças)`;
+        clearBtn.style.display = 'inline-block';
+    } else {
+        chipEl.style.display = 'none';
+        clearBtn.style.display = 'none';
+    }
+
+    if (!tableLoaded) {
+        placeholder.style.display = 'block';
+        gridWrap.style.display = 'none';
+        toggleBtn.innerHTML = `<i class="fa-solid fa-folder-open"></i> Carregar Peças (${NUM(currentRows.length)})`;
+    } else {
+        placeholder.style.display = 'none';
+        gridWrap.style.display = 'block';
+        toggleBtn.innerHTML = `<i class="fa-solid fa-folder-minus"></i> Ocultar Peças`;
+
+        const sorted = sortRows([...currentRows]);
+        renderTableSlice(sorted);
+    }
+}
+
+function renderTableSlice(rows) {
+    const total = rows.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = (currentPage - 1) * pageSize;
+    const endIdx = Math.min(startIdx + pageSize, total);
+    const slice = rows.slice(startIdx, endIdx);
+
+    renderTable(slice);
+
+    const pagEl = document.getElementById('tablePagination');
+    if (!pagEl) return;
+
+    if (total === 0) {
+        pagEl.innerHTML = `<div class="pagination-info">Nenhuma peça para exibir</div>`;
+        return;
+    }
+
+    pagEl.innerHTML = `
+        <div class="pagination-info">Exibindo ${NUM(startIdx + 1)}–${NUM(endIdx)} de ${NUM(total)} peças</div>
+        <div class="pagination-controls">
+            <button class="pagination-btn" id="pagFirst" ${currentPage === 1 ? 'disabled' : ''}><i class="fa-solid fa-angles-left"></i></button>
+            <button class="pagination-btn" id="pagPrev" ${currentPage === 1 ? 'disabled' : ''}><i class="fa-solid fa-angle-left"></i></button>
+            <span class="pagination-info" style="margin: 0 6px;">Pág. ${currentPage} de ${totalPages}</span>
+            <button class="pagination-btn" id="pagNext" ${currentPage === totalPages ? 'disabled' : ''}><i class="fa-solid fa-angle-right"></i></button>
+            <button class="pagination-btn" id="pagLast" ${currentPage === totalPages ? 'disabled' : ''}><i class="fa-solid fa-angles-right"></i></button>
+        </div>
+    `;
+
+    document.getElementById('pagFirst')?.addEventListener('click', () => { currentPage = 1; renderTableSlice(rows); });
+    document.getElementById('pagPrev')?.addEventListener('click', () => { currentPage--; renderTableSlice(rows); });
+    document.getElementById('pagNext')?.addEventListener('click', () => { currentPage++; renderTableSlice(rows); });
+    document.getElementById('pagLast')?.addEventListener('click', () => { currentPage = totalPages; renderTableSlice(rows); });
+}
+
+/* Event listeners da Tabela sob Demanda */
+document.getElementById('toggleTableBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    tableLoaded = !tableLoaded;
+    renderTableSection();
+});
+document.getElementById('tableToggleBar')?.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    tableLoaded = !tableLoaded;
+    renderTableSection();
+});
+document.getElementById('clearBarFilterBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    barFilter = null;
+    currentPage = 1;
+    renderTableSection();
+});
 
 /* ===== KPIs (cálculo) ===== */
 function calcKPIs(rows) {
@@ -607,7 +733,7 @@ function initSorting() {
             th.classList.add('active');
             const icon = th.querySelector('.sort');
             icon.className = 'fa-solid ' + (sortState.dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down') + ' sort';
-            renderTable(sortRows([...filtered]));
+            renderTableSection();
         }));
     });
 }
@@ -674,6 +800,24 @@ function datalabelsCenter() {
     };
 }
 
+/* Clique nas barras dos gráficos */
+function onChartBarClick(evt, elements, chartInstance, chartType) {
+    if (!elements || !elements.length) return;
+    const idx = elements[0].index;
+    const label = chartInstance.data.labels[idx];
+    if (!label) return;
+
+    barFilter = { type: chartType, label: label };
+    tableLoaded = true;
+    currentPage = 1;
+    renderTableSection();
+
+    const tableEl = document.getElementById('tableToggleBar');
+    if (tableEl) {
+        tableEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
 /* gráficos */
 function renderCharts(rows) {
     const commonOpts = { responsive: true, maintainAspectRatio: false, animation: false, plugins: { datalabels: {} } };
@@ -713,6 +857,7 @@ function renderCharts(rows) {
         },
         options: { 
             ...commonOpts, 
+            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.periodo, 'periodo'),
             plugins: { 
                 ...commonOpts.plugins, 
                 title: { display: true, text: 'Faturamento por Período (Mês)' },
@@ -780,7 +925,12 @@ function renderCharts(rows) {
     charts.valorItem = new Chart(document.getElementById('valorItemChart').getContext('2d'), {
         type: 'bar',
         data: { labels: topItemsValor.map(x => x[0]), datasets: [{ label: 'Faturamento (R$)', data: topItemsValor.map(x => x[1].valor), backgroundColor: '#8b5cf6', borderWidth: 2, borderRadius: 8 }] },
-        options: { ...commonOpts, indexAxis: 'y', plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 20 Peças (Valor R$)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) }, tooltip: accessoryTooltip } }
+        options: { 
+            ...commonOpts, 
+            indexAxis: 'y', 
+            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.valorItem, 'valorItem'),
+            plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 20 Peças (Valor R$)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) }, tooltip: accessoryTooltip } 
+        }
     });
 
     /* Vendas por Loja (Tooltip detalhado) */
@@ -799,6 +949,7 @@ function renderCharts(rows) {
         data: { labels: lojaArr.map(x => x[0]), datasets: [{ label: 'Vendas', data: lojaArr.map(x => x[1].valor), borderWidth: 2, borderRadius: 8 }] },
         options: { 
             ...commonOpts, 
+            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.loja, 'loja'),
             plugins: { 
                 ...commonOpts.plugins, 
                 legend: { display: false }, 
@@ -831,7 +982,12 @@ function renderCharts(rows) {
     charts.modelo = new Chart(document.getElementById('modeloChart').getContext('2d'), {
         type: 'bar',
         data: { labels: topItemsQtd.map(x => x[0]), datasets: [{ label: 'Qtd Vendida', data: topItemsQtd.map(x => x[1].qtd), backgroundColor: '#3b82f6', borderWidth: 2, borderRadius: 8 }] },
-        options: { ...commonOpts, indexAxis: 'y', plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 20 Peças (Quantidade)' }, datalabels: datalabelsCenter(), tooltip: accessoryTooltip } }
+        options: { 
+            ...commonOpts, 
+            indexAxis: 'y', 
+            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.modelo, 'modelo'),
+            plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 20 Peças (Quantidade)' }, datalabels: datalabelsCenter(), tooltip: accessoryTooltip } 
+        }
     });
 
     /* Faixas de Preço */
@@ -848,7 +1004,11 @@ function renderCharts(rows) {
     charts.faixas = new Chart(document.getElementById('faixasPrecoChart').getContext('2d'), {
         type: 'bar',
         data: { labels: Object.keys(faixas), datasets: [{ label: 'Qtd Itens', data: Object.values(faixas), backgroundColor: '#10b981', borderWidth: 2, borderRadius: 8 }] },
-        options: { ...commonOpts, plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Distribuição por Faixa de Preço' } } }
+        options: { 
+            ...commonOpts, 
+            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.faixas, 'faixas'),
+            plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Distribuição por Faixa de Preço' } } 
+        }
     });
 
     /* Vendas por Vendedor (Valor) */
@@ -858,10 +1018,12 @@ function renderCharts(rows) {
     charts.vendedorValor = new Chart(document.getElementById('vendedorValorChart').getContext('2d'), {
         type: 'bar',
         data: { labels: vendValArr.map(x => x[0]), datasets: [{ label: 'Valor (R$)', data: vendValArr.map(x => x[1]), backgroundColor: '#f59e0b', borderWidth: 2, borderRadius: 8 }] },
-        options: { ...commonOpts, plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 10 Vendedores (valor de venda)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) } } }
+        options: { 
+            ...commonOpts, 
+            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.vendedorValor, 'vendedorValor'),
+            plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 10 Vendedores (valor de venda)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) } } 
+        }
     });
-
-
 
     /* Venda de Peças por Dias de Estoque */
     const faixasDiasEstoque = {
@@ -914,6 +1076,7 @@ function renderCharts(rows) {
         },
         options: { 
             ...commonOpts, 
+            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.diasEstoque, 'diasEstoque'),
             plugins: { 
                 ...commonOpts.plugins, 
                 title: { display: true, text: 'Venda de Peças por Dias de Estoque' },
