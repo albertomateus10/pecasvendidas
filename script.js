@@ -171,7 +171,7 @@ function findCol(headers, aliases) {
 /* ===== Estado ===== */
 let allData = [];
 let filtered = [];
-let charts = { periodo: null, valorItem: null, loja: null, modelo: null, vendedor: null, vendedorValor: null, faixas: null, vendasPorDia: null };
+let charts = { periodo: null, valorItem: null, loja: null, modelo: null, vendedorValor: null, faixas: null, diasEstoque: null };
 
 /* placas excluídas */
 const excludedPlates = new Set();
@@ -774,13 +774,13 @@ function renderCharts(rows) {
     /* Top Peças (Valor) */
     const topItemsValor = Object.entries(statsByDesc)
         .sort((a, b) => b[1].valor - a[1].valor)
-        .slice(0, 10);
+        .slice(0, 20);
 
     if (charts.valorItem) charts.valorItem.destroy();
     charts.valorItem = new Chart(document.getElementById('valorItemChart').getContext('2d'), {
         type: 'bar',
         data: { labels: topItemsValor.map(x => x[0]), datasets: [{ label: 'Faturamento (R$)', data: topItemsValor.map(x => x[1].valor), backgroundColor: '#8b5cf6', borderWidth: 2, borderRadius: 8 }] },
-        options: { ...commonOpts, indexAxis: 'y', plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 10 Peças (Valor R$)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) }, tooltip: accessoryTooltip } }
+        options: { ...commonOpts, indexAxis: 'y', plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 20 Peças (Valor R$)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) }, tooltip: accessoryTooltip } }
     });
 
     /* Vendas por Loja (Tooltip detalhado) */
@@ -825,13 +825,13 @@ function renderCharts(rows) {
     /* Top Peças (Quantidade) */
     const topItemsQtd = Object.entries(statsByDesc)
         .sort((a, b) => b[1].qtd - a[1].qtd)
-        .slice(0, 10);
+        .slice(0, 20);
 
     if (charts.modelo) charts.modelo.destroy();
     charts.modelo = new Chart(document.getElementById('modeloChart').getContext('2d'), {
         type: 'bar',
         data: { labels: topItemsQtd.map(x => x[0]), datasets: [{ label: 'Qtd Vendida', data: topItemsQtd.map(x => x[1].qtd), backgroundColor: '#3b82f6', borderWidth: 2, borderRadius: 8 }] },
-        options: { ...commonOpts, indexAxis: 'y', plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 10 Peças (Quantidade)' }, datalabels: datalabelsCenter(), tooltip: accessoryTooltip } }
+        options: { ...commonOpts, indexAxis: 'y', plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 20 Peças (Quantidade)' }, datalabels: datalabelsCenter(), tooltip: accessoryTooltip } }
     });
 
     /* Faixas de Preço */
@@ -861,32 +861,85 @@ function renderCharts(rows) {
         options: { ...commonOpts, plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 10 Vendedores (valor de venda)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) } } }
     });
 
-    /* Vendas por Vendedor */
-    const porVend = {}; rows.forEach(r => { const k = r.Vendedor || 'Não informado'; porVend[k] = (porVend[k] || 0) + 1; });
-    const vendArr = Object.entries(porVend).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    if (charts.vendedor) charts.vendedor.destroy();
-    charts.vendedor = new Chart(document.getElementById('vendedorChart').getContext('2d'), {
-        type: 'bar',
-        data: { labels: vendArr.map(x => x[0]), datasets: [{ label: 'Vendas', data: vendArr.map(x => x[1]), borderWidth: 2, borderRadius: 8 }] },
-        options: { ...commonOpts, plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 10 Vendedores (atendimentos)' } } }
+
+
+    /* Venda de Peças por Dias de Estoque */
+    const faixasDiasEstoque = {
+        '0 a 90': { valor: 0, qtd: 0 },
+        '91 a 180': { valor: 0, qtd: 0 },
+        '181 a 365': { valor: 0, qtd: 0 },
+        '366 a 1000': { valor: 0, qtd: 0 },
+        '1001 ou mais': { valor: 0, qtd: 0 }
+    };
+
+    rows.forEach(r => {
+        const g = +r.Giro || 0;
+        const v = +r.PrecoFinal || 0;
+        const q = +r.Quantidade || 0;
+
+        if (g >= 0 && g <= 90) {
+            faixasDiasEstoque['0 a 90'].valor += v;
+            faixasDiasEstoque['0 a 90'].qtd += q;
+        } else if (g >= 91 && g <= 180) {
+            faixasDiasEstoque['91 a 180'].valor += v;
+            faixasDiasEstoque['91 a 180'].qtd += q;
+        } else if (g >= 181 && g <= 365) {
+            faixasDiasEstoque['181 a 365'].valor += v;
+            faixasDiasEstoque['181 a 365'].qtd += q;
+        } else if (g >= 366 && g <= 1000) {
+            faixasDiasEstoque['366 a 1000'].valor += v;
+            faixasDiasEstoque['366 a 1000'].qtd += q;
+        } else if (g >= 1001) {
+            faixasDiasEstoque['1001 ou mais'].valor += v;
+            faixasDiasEstoque['1001 ou mais'].qtd += q;
+        }
     });
 
-    /* Vendas por Dia */
-    const porDia = {}; rows.forEach(r => { if (r.DiaVenda) porDia[r.DiaVenda] = (porDia[r.DiaVenda] || 0) + (+r.PrecoFinal || 0); });
-    const diasArr = Object.entries(porDia).sort((a, b) => a[0] - b[0]);
-    if (charts.vendasPorDia) charts.vendasPorDia.destroy();
-    charts.vendasPorDia = new Chart(document.getElementById('vendasPorDiaChart').getContext('2d'), {
+    const labelsDias = Object.keys(faixasDiasEstoque);
+    const valoresDias = labelsDias.map(k => faixasDiasEstoque[k].valor);
+
+    if (charts.diasEstoque) charts.diasEstoque.destroy();
+    charts.diasEstoque = new Chart(document.getElementById('diasEstoqueChart').getContext('2d'), {
         type: 'bar',
-        data: { labels: diasArr.map(x => x[0]), datasets: [{ label: 'Faturamento (R$)', data: diasArr.map(x => x[1]), backgroundColor: '#3b82f6', borderRadius: 6 }] },
+        data: { 
+            labels: labelsDias, 
+            datasets: [{ 
+                label: 'Faturamento (R$)', 
+                data: valoresDias, 
+                backgroundColor: '#3b82f6', 
+                borderRadius: 8,
+                barPercentage: 0.5,
+                categoryPercentage: 0.8
+            }] 
+        },
         options: { 
             ...commonOpts, 
             plugins: { 
                 ...commonOpts.plugins, 
-                title: { display: true, text: 'Faturamento por Dia do Mês' },
+                title: { display: true, text: 'Venda de Peças por Dias de Estoque' },
+                datalabels: {
+                    display: true,
+                    backgroundColor: '#3b82f6',
+                    borderRadius: 4,
+                    color: '#fff',
+                    font: { weight: 'bold', size: 11 },
+                    align: 'top',
+                    anchor: 'end',
+                    padding: 6,
+                    formatter: (v) => BRL(v)
+                },
                 tooltip: {
                     callbacks: {
-                        title: () => '',
-                        label: (ctx) => BRL(ctx.raw)
+                        label: (context) => {
+                            const name = context.label;
+                            const s = faixasDiasEstoque[name] || { valor: 0, qtd: 0 };
+                            const avg = s.qtd ? s.valor / s.qtd : 0;
+                            return [
+                                `Faturamento: ${BRL(s.valor)}`,
+                                `Quantidade: ${NUM(s.qtd)} peças`,
+                                `Preço Médio: ${BRL(avg)}`
+                            ];
+                        }
                     }
                 }
             } 
