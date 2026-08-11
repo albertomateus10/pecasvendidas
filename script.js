@@ -423,11 +423,11 @@ function parseRows(headers, data) {
 
     /* Filtro Dias — faixas fixas baseadas na coluna C */
     const FAIXAS_DIAS = [
-        '0 a 90',
-        '91 a 180',
-        '181 a 365',
-        '366 a 1000',
-        '1001 ou mais',
+        'de 0 a 90 dias',
+        'de 91 a 180 dias',
+        'de 181 a 365 dias',
+        'de 366 a 1000 dias',
+        'acima de 1000 dias',
     ];
     pillInstances.Dias.setOptions(FAIXAS_DIAS, { keepOrder: true });
 
@@ -471,11 +471,11 @@ function applyFilters() {
         const grupoOk = state.GrupoInterno.length === 0 || state.GrupoInterno.includes(r.GrupoInterno);
         const diasOk = state.Dias.length === 0 || state.Dias.some(faixa => {
             const g = +r.Giro || 0;
-            if (faixa === '0 a 90')       return g >= 0 && g <= 90;
-            if (faixa === '91 a 180')     return g >= 91 && g <= 180;
-            if (faixa === '181 a 365')    return g >= 181 && g <= 365;
-            if (faixa === '366 a 1000')   return g >= 366 && g <= 1000;
-            if (faixa === '1001 ou mais') return g >= 1001;
+            if (faixa.includes('0 a 90'))       return g >= 0 && g <= 90;
+            if (faixa.includes('91 a 180'))     return g >= 91 && g <= 180;
+            if (faixa.includes('181 a 365'))    return g >= 181 && g <= 365;
+            if (faixa.includes('366 a 1000'))   return g >= 366 && g <= 1000;
+            if (faixa.includes('1000') || faixa.includes('1001')) return g >= 1001;
             return false;
         });
 
@@ -514,11 +514,11 @@ function filterByBar(rows, filter) {
         }
         if (type === 'diasEstoque') {
             const g = +r.Giro || 0;
-            if (label === '0 a 90') return g >= 0 && g <= 90;
-            if (label === '91 a 180') return g >= 91 && g <= 180;
-            if (label === '181 a 365') return g >= 181 && g <= 365;
-            if (label === '366 a 1000') return g >= 366 && g <= 1000;
-            if (label === '1001 ou mais') return g >= 1001;
+            if (label.includes('0 a 90')) return g >= 0 && g <= 90;
+            if (label.includes('91 a 180')) return g >= 91 && g <= 180;
+            if (label.includes('181 a 365')) return g >= 181 && g <= 365;
+            if (label.includes('366 a 1000')) return g >= 366 && g <= 1000;
+            if (label.includes('1000') || label.includes('1001')) return g >= 1001;
             return false;
         }
         return true;
@@ -689,7 +689,6 @@ function renderKpiGroups() {
 
     const gruposHTML = `
 <div class="kpi-group">
-<div class="title"><i class="fa-solid fa-sack-dollar"></i> Totais e Médias</div>
 <div class="kpi-grid">
     <div class="kpi"><div class="lab">Quantidade de Itens</div><div class="val">${NUM(k.n)}</div></div>
     <div class="kpi"><div class="lab">Qtd. Peças Vendidas</div><div class="val">${NUM(k.qtdTotal)}</div></div>
@@ -1140,11 +1139,11 @@ function renderCharts(rows) {
 
     /* Venda de Peças por Dias de Estoque */
     const faixasDiasEstoque = {
-        '0 a 90': { valor: 0, qtd: 0 },
-        '91 a 180': { valor: 0, qtd: 0 },
-        '181 a 365': { valor: 0, qtd: 0 },
-        '366 a 1000': { valor: 0, qtd: 0 },
-        '1001 ou mais': { valor: 0, qtd: 0 }
+        'de 0 a 90 dias': { valor: 0, qtd: 0 },
+        'de 91 a 180 dias': { valor: 0, qtd: 0 },
+        'de 181 a 365 dias': { valor: 0, qtd: 0 },
+        'de 366 a 1000 dias': { valor: 0, qtd: 0 },
+        'acima de 1000 dias': { valor: 0, qtd: 0 }
     };
 
     rows.forEach(r => {
@@ -1153,25 +1152,27 @@ function renderCharts(rows) {
         const q = +r.Quantidade || 0;
 
         if (g >= 0 && g <= 90) {
-            faixasDiasEstoque['0 a 90'].valor += v;
-            faixasDiasEstoque['0 a 90'].qtd += q;
+            faixasDiasEstoque['de 0 a 90 dias'].valor += v;
+            faixasDiasEstoque['de 0 a 90 dias'].qtd += q;
         } else if (g >= 91 && g <= 180) {
-            faixasDiasEstoque['91 a 180'].valor += v;
-            faixasDiasEstoque['91 a 180'].qtd += q;
+            faixasDiasEstoque['de 91 a 180 dias'].valor += v;
+            faixasDiasEstoque['de 91 a 180 dias'].qtd += q;
         } else if (g >= 181 && g <= 365) {
-            faixasDiasEstoque['181 a 365'].valor += v;
-            faixasDiasEstoque['181 a 365'].qtd += q;
+            faixasDiasEstoque['de 181 a 365 dias'].valor += v;
+            faixasDiasEstoque['de 181 a 365 dias'].qtd += q;
         } else if (g >= 366 && g <= 1000) {
-            faixasDiasEstoque['366 a 1000'].valor += v;
-            faixasDiasEstoque['366 a 1000'].qtd += q;
+            faixasDiasEstoque['de 366 a 1000 dias'].valor += v;
+            faixasDiasEstoque['de 366 a 1000 dias'].qtd += q;
         } else if (g >= 1001) {
-            faixasDiasEstoque['1001 ou mais'].valor += v;
-            faixasDiasEstoque['1001 ou mais'].qtd += q;
+            faixasDiasEstoque['acima de 1000 dias'].valor += v;
+            faixasDiasEstoque['acima de 1000 dias'].qtd += q;
         }
     });
 
     const labelsDias = Object.keys(faixasDiasEstoque);
     const valoresDias = labelsDias.map(k => faixasDiasEstoque[k].valor);
+    const coresDias = ['#5cb87a', '#5b85ee', '#e39f3c', '#db4d47', '#70757f'];
+    const totalValorDias = valoresDias.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
 
     if (charts.diasEstoque) charts.diasEstoque.destroy();
     charts.diasEstoque = new Chart(document.getElementById('diasEstoqueChart').getContext('2d'), {
@@ -1182,35 +1183,50 @@ function renderCharts(rows) {
             datasets: [{ 
                 label: 'Faturamento (R$)', 
                 data: valoresDias, 
-                backgroundColor: '#3b82f6', 
+                backgroundColor: coresDias, 
                 borderRadius: 8,
-                barPercentage: 0.5,
-                categoryPercentage: 0.8
+                barPercentage: 0.75,
+                categoryPercentage: 0.85,
+                minBarLength: 10
             }] 
         },
         options: { 
             ...commonOpts, 
+            indexAxis: 'y',
             onClick: (evt, elements) => onChartBarClick(evt, elements, charts.diasEstoque, 'diasEstoque'),
             scales: {
+                x: {
+                    grace: '30%',
+                    grid: { color: '#f1f5f9' },
+                    ticks: {
+                        color: '#64748b',
+                        font: { size: 11 },
+                        callback: v => v.toLocaleString('pt-BR')
+                    }
+                },
                 y: {
-                    grace: '20%'
+                    grid: { display: true, color: '#f8fafc' },
+                    ticks: {
+                        color: '#475569',
+                        font: { size: 11, weight: '500' }
+                    }
                 }
             },
             plugins: { 
                 ...commonOpts.plugins, 
-                title: { display: true, text: 'Venda de Peças por Dias de Estoque' },
+                legend: { display: false },
+                title: { display: true, text: 'Dias de Estoque', font: { size: 14, weight: 'bold' }, color: '#334155' },
                 datalabels: {
                     display: true,
                     align: 'end',
                     anchor: 'end',
-                    offset: 4,
-                    color: '#1e3a8a',
+                    offset: 8,
+                    clip: false,
+                    color: '#2d3748',
                     font: { weight: 'bold', size: 11 },
-                    formatter: (v, ctx) => {
-                        const data = ctx.dataset.data || [];
-                        const total = data.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
-                        const pct = ((v / total) * 100).toFixed(1).replace('.', ',');
-                        return v > 0 ? `${BRL(v)} (${pct}%)` : 'R$ 0,00';
+                    formatter: (v) => {
+                        const pct = ((v / totalValorDias) * 100).toFixed(1).replace('.', ',');
+                        return v > 0 ? `${BRL(v)} (${pct}%)` : 'R$ 0,00 (0,0%)';
                     }
                 },
                 tooltip: {
@@ -1218,9 +1234,10 @@ function renderCharts(rows) {
                         label: (context) => {
                             const name = context.label;
                             const s = faixasDiasEstoque[name] || { valor: 0, qtd: 0 };
+                            const pct = ((s.valor / totalValorDias) * 100).toFixed(1).replace('.', ',');
                             const avg = s.qtd ? s.valor / s.qtd : 0;
                             return [
-                                `Faturamento: ${BRL(s.valor)}`,
+                                `Faturamento: ${BRL(s.valor)} (${pct}%)`,
                                 `Quantidade: ${NUM(s.qtd)} peças`,
                                 `Preço Médio: ${BRL(avg)}`
                             ];
