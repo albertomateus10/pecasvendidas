@@ -13,6 +13,15 @@ const BRL = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: '
 const NUM = v => new Intl.NumberFormat('pt-BR').format(+v || 0);
 const PCT = v => (Number.isFinite(v) ? v.toFixed(1).replace('.', ',') : '—') + '%';
 
+function getItemKey(r) {
+    if (!r) return '—';
+    const cod = (r.CodItem && r.CodItem !== '—' && r.CodItem !== 'null' && r.CodItem !== 'undefined') ? String(r.CodItem).trim() : '';
+    const desc = (r.Descricao && r.Descricao !== '—') ? String(r.Descricao).trim() : '—';
+    if (cod && desc && desc !== '—') return `${cod} - ${desc}`;
+    if (cod) return cod;
+    return desc;
+}
+
 /* ===== Scroll estável ===== */
 function withStableScroll(fn) {
     const x = window.pageXOffset || 0;
@@ -407,7 +416,7 @@ function parseRows(headers, data) {
 
     pillInstances.Loja.setOptions(allData.map(x => x.Loja));
     pillInstances.Vendedor.setOptions(allData.map(x => x.Vendedor));
-    pillInstances.Modelo.setOptions(allData.map(x => x.Descricao));
+    pillInstances.Modelo.setOptions(allData.map(x => getItemKey(x)));
     pillInstances.Nota.setOptions(allData.map(x => x.Nota));
     pillInstances.CodItem.setOptions(allData.map(x => x.CodItem));
     pillInstances.GrupoInterno.setOptions(allData.map(x => x.GrupoInterno));
@@ -452,9 +461,10 @@ document.getElementById('clearAll').addEventListener('click', () => {
 
 function applyFilters() {
     filtered = allData.filter(r => {
+        const itemKey = getItemKey(r);
         const lojaOk = state.Loja.length === 0 || state.Loja.includes(r.Loja);
         const vendOk = state.Vendedor.length === 0 || state.Vendedor.includes(r.Vendedor);
-        const modOk = state.Modelo.length === 0 || state.Modelo.includes(r.Descricao);
+        const modOk = state.Modelo.length === 0 || state.Modelo.includes(itemKey) || state.Modelo.includes(r.Descricao) || state.Modelo.includes(String(r.CodItem));
         const mesOk = state.Mes.length === 0 || state.Mes.includes(r.MesNome);
         const notaOk = state.Nota.length === 0 || state.Nota.includes(r.Nota);
         const codOk = state.CodItem.length === 0 || state.CodItem.includes(r.CodItem);
@@ -487,7 +497,10 @@ function filterByBar(rows, filter) {
 
     return rows.filter(r => {
         if (type === 'periodo') return r.MesNome === label;
-        if (type === 'valorItem' || type === 'modelo') return (r.Descricao || '—') === label;
+        if (type === 'valorItem' || type === 'modelo') {
+            const key = getItemKey(r);
+            return key === label || (r.Descricao || '—') === label || String(r.CodItem || '') === label;
+        }
         if (type === 'loja') return (r.Loja || 'Não informado') === label;
         if (type === 'vendedorValor') return (r.Vendedor || 'Não informado') === label;
         if (type === 'faixas') {
@@ -607,12 +620,12 @@ function calcKPIs(rows) {
     const ticketMedio = n ? faturamentoTotal / n : 0;
     const itensPorVenda = n ? qtdTotal / n : 0;
 
-    const descCount = {};
+    const itemMap = {};
     rows.forEach(r => {
-        const key = r.Descricao || '—';
-        descCount[key] = (descCount[key] || 0) + (+r.QtdPecas || +r.Quantidade || 0);
+        const key = getItemKey(r);
+        itemMap[key] = (itemMap[key] || 0) + (+r.QtdPecas || +r.Quantidade || 0);
     });
-    const itemMaisVendido = Object.entries(descCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+    const itemMaisVendido = Object.entries(itemMap).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
 
     const giroVals = rows.map(r => +r.Giro || 0).filter(v => v > 0);
     const giroMedio = giroVals.length ? giroVals.reduce((a, b) => a + b, 0) / giroVals.length : 0;
@@ -901,13 +914,13 @@ function renderCharts(rows) {
         }
     });
 
-    /* Agregação centralizada para Peças (Tooltip detalhado) */
-    const statsByDesc = {};
+    /* Agregação centralizada para Peças (por Código + Descrição) */
+    const statsByItem = {};
     rows.forEach(r => {
-        const k = r.Descricao || '—';
-        if (!statsByDesc[k]) statsByDesc[k] = { valor: 0, qtd: 0, cod: r.CodItem || '—' };
-        statsByDesc[k].valor += (+r.PrecoFinal || 0);
-        statsByDesc[k].qtd += (+r.Quantidade || 0);
+        const k = getItemKey(r);
+        if (!statsByItem[k]) statsByItem[k] = { valor: 0, qtd: 0, cod: r.CodItem || '—', desc: r.Descricao || '—' };
+        statsByItem[k].valor += (+r.PrecoFinal || 0);
+        statsByItem[k].qtd += (+r.Quantidade || 0);
     });
 
     const accessoryTooltip = {
@@ -915,12 +928,13 @@ function renderCharts(rows) {
             title: () => '',
             label: (context) => {
                 const name = context.label;
-                const s = statsByDesc[name] || { valor: 0, qtd: 0, cod: '—' };
+                const s = statsByItem[name] || { valor: 0, qtd: 0, cod: '—', desc: '—' };
                 const avg = s.qtd ? s.valor / s.qtd : 0;
                 return [
                     `Código: ${s.cod}`,
+                    `Descrição: ${s.desc}`,
                     `Faturamento: ${BRL(s.valor)}`,
-                    `Quantidade: ${NUM(s.qtd)}`,
+                    `Quantidade: ${NUM(s.qtd)} peças`,
                     `Preço Médio: ${BRL(avg)}`
                 ];
             }
@@ -928,19 +942,51 @@ function renderCharts(rows) {
     };
 
     /* Top Peças (Valor) */
-    const topItemsValor = Object.entries(statsByDesc)
+    const topItemsValor = Object.entries(statsByItem)
         .sort((a, b) => b[1].valor - a[1].valor)
         .slice(0, 20);
 
     if (charts.valorItem) charts.valorItem.destroy();
     charts.valorItem = new Chart(document.getElementById('valorItemChart').getContext('2d'), {
         type: 'bar',
-        data: { labels: topItemsValor.map(x => x[0]), datasets: [{ label: 'Faturamento (R$)', data: topItemsValor.map(x => x[1].valor), backgroundColor: '#8b5cf6', borderWidth: 2, borderRadius: 8 }] },
+        data: { 
+            labels: topItemsValor.map(x => x[0]), 
+            datasets: [{ 
+                label: 'Faturamento (R$)', 
+                data: topItemsValor.map(x => x[1].valor), 
+                backgroundColor: '#8b5cf6', 
+                borderWidth: 0, 
+                borderRadius: 6,
+                barPercentage: 0.75,
+                categoryPercentage: 0.85
+            }] 
+        },
         options: { 
             ...commonOpts, 
             indexAxis: 'y', 
             onClick: (evt, elements) => onChartBarClick(evt, elements, charts.valorItem, 'valorItem'),
-            plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 20 Peças (Valor R$)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) }, tooltip: accessoryTooltip } 
+            scales: {
+                x: { grace: '22%' },
+                y: {
+                    ticks: { font: { size: 11, weight: '600' }, color: '#334155' }
+                }
+            },
+            plugins: { 
+                ...commonOpts.plugins, 
+                legend: { display: false }, 
+                title: { display: true, text: 'Top 20 Peças (Valor R$)', font: { size: 14, weight: 'bold' } }, 
+                datalabels: { 
+                    display: true,
+                    align: 'end',
+                    anchor: 'end',
+                    offset: 6,
+                    clip: false,
+                    color: '#6d28d9',
+                    font: { weight: 'bold', size: 11 },
+                    formatter: v => BRL(v)
+                }, 
+                tooltip: accessoryTooltip 
+            } 
         }
     });
 
@@ -1004,19 +1050,56 @@ function renderCharts(rows) {
     });
 
     /* Top Peças (Quantidade) */
-    const topItemsQtd = Object.entries(statsByDesc)
+    const topItemsQtd = Object.entries(statsByItem)
         .sort((a, b) => b[1].qtd - a[1].qtd)
         .slice(0, 20);
 
     if (charts.modelo) charts.modelo.destroy();
     charts.modelo = new Chart(document.getElementById('modeloChart').getContext('2d'), {
         type: 'bar',
-        data: { labels: topItemsQtd.map(x => x[0]), datasets: [{ label: 'Qtd Vendida', data: topItemsQtd.map(x => x[1].qtd), backgroundColor: '#3b82f6', borderWidth: 2, borderRadius: 8 }] },
+        data: { 
+            labels: topItemsQtd.map(x => x[0]), 
+            datasets: [{ 
+                label: 'Qtd Vendida', 
+                data: topItemsQtd.map(x => x[1].qtd), 
+                backgroundColor: '#3b82f6', 
+                borderWidth: 0, 
+                borderRadius: 6,
+                barPercentage: 0.75,
+                categoryPercentage: 0.85
+            }] 
+        },
         options: { 
             ...commonOpts, 
             indexAxis: 'y', 
             onClick: (evt, elements) => onChartBarClick(evt, elements, charts.modelo, 'modelo'),
-            plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 20 Peças (Quantidade)' }, datalabels: datalabelsCenter(), tooltip: accessoryTooltip } 
+            scales: {
+                x: { grace: '22%' },
+                y: {
+                    ticks: { font: { size: 11, weight: '600' }, color: '#334155' }
+                }
+            },
+            plugins: { 
+                ...commonOpts.plugins, 
+                legend: { display: false }, 
+                title: { display: true, text: 'Top 20 Peças (Quantidade)', font: { size: 14, weight: 'bold' } }, 
+                datalabels: { 
+                    display: true,
+                    align: 'end',
+                    anchor: 'end',
+                    offset: 6,
+                    clip: false,
+                    color: '#1d4ed8',
+                    font: { weight: 'bold', size: 11 },
+                    formatter: (v, ctx) => {
+                        const data = ctx.dataset.data || [];
+                        const total = data.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+                        const pct = ((v / total) * 100).toFixed(1).replace('.', ',');
+                        return `${NUM(v)} (${pct}%)`;
+                    }
+                }, 
+                tooltip: accessoryTooltip 
+            } 
         }
     });
 

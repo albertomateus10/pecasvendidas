@@ -665,3 +665,12 @@ td.cell-placa:hover {
     font-weight: 600;
 }
 
+@media (max-width: 1024px) {
+    .charts {
+        grid-template-columns: 1fr;
+    }
+    .chart {
+        grid-column: span 1 !important;
+    }
+}
+
