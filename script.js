@@ -603,14 +603,14 @@ document.getElementById('clearBarFilterBtn')?.addEventListener('click', (e) => {
 function calcKPIs(rows) {
     const n = rows.length;
     const faturamentoTotal = rows.reduce((s, r) => s + (+r.PrecoFinal || 0), 0);
-    const qtdTotal = rows.reduce((s, r) => s + (+r.Quantidade || 0), 0);
+    const qtdTotal = rows.reduce((s, r) => s + (+r.QtdPecas || +r.Quantidade || 0), 0);
     const ticketMedio = n ? faturamentoTotal / n : 0;
     const itensPorVenda = n ? qtdTotal / n : 0;
 
     const descCount = {};
     rows.forEach(r => {
         const key = r.Descricao || '—';
-        descCount[key] = (descCount[key] || 0) + (+r.Quantidade || 0);
+        descCount[key] = (descCount[key] || 0) + (+r.QtdPecas || +r.Quantidade || 0);
     });
     const itemMaisVendido = Object.entries(descCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
 
@@ -679,6 +679,7 @@ function renderKpiGroups() {
 <div class="title"><i class="fa-solid fa-sack-dollar"></i> Totais e Médias</div>
 <div class="kpi-grid">
     <div class="kpi"><div class="lab">Quantidade de Itens</div><div class="val">${NUM(k.n)}</div></div>
+    <div class="kpi"><div class="lab">Qtd. Peças Vendidas</div><div class="val">${NUM(k.qtdTotal)}</div></div>
     <div class="kpi"><div class="lab">Faturamento Total</div><div class="val">${BRL(k.faturamentoTotal)}</div></div>
     <div class="kpi"><div class="lab">Ticket Médio (Item)</div><div class="val">${BRL(k.ticketMedio)}</div></div>
     <div class="kpi"><div class="lab">Giro Médio</div><div class="val">${k.giroMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</div></div>
