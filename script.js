@@ -859,19 +859,51 @@ function renderCharts(rows) {
         return ma - mb;
     });
 
+    const valorValues = mesesSorted.map(x => x[1].valor);
+    const avgValor = valorValues.length ? valorValues.reduce((a, b) => a + b, 0) / valorValues.length : 0;
+
     if (charts.periodo) charts.periodo.destroy();
     charts.periodo = new Chart(document.getElementById('periodoChart').getContext('2d'), {
         type: 'bar',
         data: { 
             labels: mesesSorted.map(x => x[0]), 
-            datasets: [{ 
-                label: 'Faturamento (R$)', 
-                data: mesesSorted.map(x => x[1].valor), 
-                backgroundColor: '#10b981',
-                borderRadius: 8,
-                barPercentage: 0.5,
-                categoryPercentage: 0.8
-            }] 
+            datasets: [
+                { 
+                    label: 'Faturamento (R$)', 
+                    data: valorValues,
+                    backgroundColor: '#10b981',
+                    borderRadius: 8,
+                    barPercentage: 0.5,
+                    categoryPercentage: 0.8,
+                    order: 2,
+                    datalabels: {
+                        display: true,
+                        backgroundColor: null,
+                        borderRadius: 0,
+                        color: '#fff',
+                        font: { weight: 'bold', size: 11 },
+                        align: 'start',
+                        anchor: 'end',
+                        padding: { top: 6 },
+                        formatter: (v) => (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' K'
+                    }
+                },
+                {
+                    label: `Média: ${(avgValor / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} K`,
+                    type: 'line',
+                    data: mesesSorted.map(() => avgValor),
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239,68,68,0.08)',
+                    borderWidth: 2.5,
+                    borderDash: [8, 4],
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: '#ef4444',
+                    tension: 0,
+                    order: 1,
+                    datalabels: { display: false }
+                }
+            ]
         },
         options: { 
             ...commonOpts, 
@@ -884,20 +916,30 @@ function renderCharts(rows) {
             plugins: { 
                 ...commonOpts.plugins, 
                 title: { display: true, text: 'Faturamento por Período (Mês)' },
-                datalabels: {
+                datalabels: {},
+                legend: {
                     display: true,
-                    backgroundColor: '#10b981',
-                    borderRadius: 4,
-                    color: '#fff',
-                    font: { weight: 'bold', size: 11 },
-                    align: 'top',
-                    anchor: 'end',
-                    padding: 6,
-                    formatter: (v) => (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' K'
+                    labels: {
+                        generateLabels: (chart) => {
+                            const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                            return labels.map(l => {
+                                if (l.datasetIndex === 1) {
+                                    l.fillStyle = 'transparent';
+                                    l.strokeStyle = '#ef4444';
+                                    l.lineWidth = 2.5;
+                                    l.lineDash = [8, 4];
+                                }
+                                return l;
+                            });
+                        }
+                    }
                 },
                 tooltip: {
                     callbacks: {
                         label: (context) => {
+                            if (context.datasetIndex === 1) {
+                                return `Média: ${BRL(avgValor)}`;
+                            }
                             const name = context.label;
                             const s = statsByMonth[name] || { valor: 0, qtd: 0 };
                             const avg = s.qtd ? s.valor / s.qtd : 0;
@@ -933,13 +975,13 @@ function renderCharts(rows) {
                     order: 2,
                     datalabels: {
                         display: true,
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 4,
+                        backgroundColor: null,
+                        borderRadius: 0,
                         color: '#fff',
                         font: { weight: 'bold', size: 11 },
-                        align: 'top',
+                        align: 'start',
                         anchor: 'end',
-                        padding: 6,
+                        padding: { top: 6 },
                         formatter: (v) => NUM(Math.round(v))
                     }
                 },
