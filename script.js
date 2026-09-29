@@ -185,7 +185,7 @@ function findCol(headers, aliases) {
 /* ===== Estado ===== */
 let allData = [];
 let filtered = [];
-let charts = { periodo: null, valorItem: null, loja: null, modelo: null, vendedorValor: null, faixas: null, diasEstoque: null };
+let charts = { periodo: null, qtdPeriodo: null, valorItem: null, loja: null, modelo: null, vendedorValor: null, faixas: null, diasEstoque: null };
 
 /* placas excluídas */
 const excludedPlates = new Set();
@@ -910,6 +910,99 @@ function renderCharts(rows) {
                     }
                 }
             } 
+        }
+    });
+
+    /* ── Quantidade Vendida por Período ── */
+    const qtdValues = mesesSorted.map(x => x[1].qtd);
+    const avgQtd = qtdValues.length ? qtdValues.reduce((a, b) => a + b, 0) / qtdValues.length : 0;
+
+    if (charts.qtdPeriodo) charts.qtdPeriodo.destroy();
+    charts.qtdPeriodo = new Chart(document.getElementById('qtdPeriodoChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: mesesSorted.map(x => x[0]),
+            datasets: [
+                {
+                    label: 'Quantidade Vendida',
+                    data: qtdValues,
+                    backgroundColor: '#3b82f6',
+                    borderRadius: 8,
+                    barPercentage: 0.5,
+                    categoryPercentage: 0.8,
+                    order: 2,
+                    datalabels: {
+                        display: true,
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 4,
+                        color: '#fff',
+                        font: { weight: 'bold', size: 11 },
+                        align: 'top',
+                        anchor: 'end',
+                        padding: 6,
+                        formatter: (v) => NUM(Math.round(v))
+                    }
+                },
+                {
+                    label: `Média: ${NUM(Math.round(avgQtd))}`,
+                    type: 'line',
+                    data: mesesSorted.map(() => avgQtd),
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239,68,68,0.08)',
+                    borderWidth: 2.5,
+                    borderDash: [8, 4],
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: '#ef4444',
+                    tension: 0,
+                    order: 1,
+                    datalabels: { display: false }
+                }
+            ]
+        },
+        options: {
+            ...commonOpts,
+            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.qtdPeriodo, 'periodo'),
+            scales: {
+                y: { grace: '15%', beginAtZero: true }
+            },
+            plugins: {
+                ...commonOpts.plugins,
+                title: { display: true, text: 'Quantidade de Peças Vendidas por Período (Mês)' },
+                datalabels: {},
+                legend: {
+                    display: true,
+                    labels: {
+                        generateLabels: (chart) => {
+                            const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                            return labels.map(l => {
+                                if (l.datasetIndex === 1) {
+                                    l.fillStyle = 'transparent';
+                                    l.strokeStyle = '#ef4444';
+                                    l.lineWidth = 2.5;
+                                    l.lineDash = [8, 4];
+                                }
+                                return l;
+                            });
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => {
+                            if (context.datasetIndex === 1) {
+                                return `Média: ${NUM(Math.round(avgQtd))} peças/mês`;
+                            }
+                            const name = context.label;
+                            const s = statsByMonth[name] || { valor: 0, qtd: 0 };
+                            return [
+                                `Quantidade: ${NUM(s.qtd)} peças`,
+                                `Faturamento: ${BRL(s.valor)}`
+                            ];
+                        }
+                    }
+                }
+            }
         }
     });
 

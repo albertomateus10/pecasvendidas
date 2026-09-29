@@ -39,6 +39,7 @@ body {
 
 .header {
     display: flex;
+    justify-content: center;
     align-items: center;
     gap: 14px;
     margin-bottom: 6px
@@ -48,6 +49,7 @@ body {
     margin: 0;
     font-size: 28px;
     font-weight: 800;
+    text-align: center;
     background: linear-gradient(135deg, var(--primary), var(--primary-2));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent
