@@ -615,6 +615,12 @@ document.getElementById('clearBarFilterBtn')?.addEventListener('click', (e) => {
 /* ===== KPIs (cálculo) ===== */
 function calcKPIs(rows) {
     const n = rows.length;
+    const codigosUnicos = new Set(
+        rows
+            .map(r => (r.CodItem !== undefined && r.CodItem !== null) ? String(r.CodItem).trim() : '')
+            .filter(c => c && c !== '—' && c !== 'null' && c !== 'undefined')
+    );
+    const qtdItens = codigosUnicos.size;
     const faturamentoTotal = rows.reduce((s, r) => s + (+r.PrecoFinal || 0), 0);
     const qtdTotal = rows.reduce((s, r) => s + (+r.QtdPecas || +r.Quantidade || 0), 0);
     const ticketMedio = n ? faturamentoTotal / n : 0;
@@ -631,7 +637,7 @@ function calcKPIs(rows) {
     const giroMedio = giroVals.length ? giroVals.reduce((a, b) => a + b, 0) / giroVals.length : 0;
 
     return {
-        n, faturamentoTotal, qtdTotal, ticketMedio, itensPorVenda, itemMaisVendido, giroMedio
+        n, qtdItens, faturamentoTotal, qtdTotal, ticketMedio, itensPorVenda, itemMaisVendido, giroMedio
     };
 }
 
@@ -690,7 +696,7 @@ function renderKpiGroups() {
     const gruposHTML = `
 <div class="kpi-group">
 <div class="kpi-grid">
-    <div class="kpi"><div class="lab">Quantidade de Itens</div><div class="val">${NUM(k.n)}</div></div>
+    <div class="kpi"><div class="lab">Quantidade de Itens</div><div class="val">${NUM(k.qtdItens)}</div></div>
     <div class="kpi"><div class="lab">Qtd. Peças Vendidas</div><div class="val">${NUM(k.qtdTotal)}</div></div>
     <div class="kpi"><div class="lab">Faturamento Total</div><div class="val">${BRL(k.faturamentoTotal)}</div></div>
     <div class="kpi"><div class="lab">Ticket Médio (Item)</div><div class="val">${BRL(k.ticketMedio)}</div></div>
