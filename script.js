@@ -1,26 +1,14 @@
-/* ===== Registro do Plugin de Rótulos do Chart.js ===== */
-if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
-    Chart.register(ChartDataLabels);
-}
-
-/* ===== Helpers UI ===== */
 function showError(msg) { const el = document.getElementById('alertError'); el.querySelector('.msg').textContent = msg; el.classList.add('show'); }
 function showWarn(msg) { const el = document.getElementById('alertWarn'); el.querySelector('.msg').textContent = msg; el.classList.add('show'); }
+
+// Registrar plugin de etiquetas para todos os gráficos
+Chart.register(ChartDataLabels);
 
 /* ===== Util ===== */
 const $ = s => document.querySelector(s);
 const BRL = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(+v || 0);
 const NUM = v => new Intl.NumberFormat('pt-BR').format(+v || 0);
-const PCT = v => (Number.isFinite(v) ? v.toFixed(1).replace('.', ',') : '—') + '%';
-
-function getItemKey(r) {
-    if (!r) return '—';
-    const cod = (r.CodItem && r.CodItem !== '—' && r.CodItem !== 'null' && r.CodItem !== 'undefined') ? String(r.CodItem).trim() : '';
-    const desc = (r.Descricao && r.Descricao !== '—') ? String(r.Descricao).trim() : '—';
-    if (cod && desc && desc !== '—') return `${cod} - ${desc}`;
-    if (cod) return cod;
-    return desc;
-}
+const PCT = v => (Number.isFinite(v) ? v.toFixed(2).replace('.', ',') : '—') + '%';
 
 /* ===== Scroll estável ===== */
 function withStableScroll(fn) {
@@ -37,10 +25,24 @@ function withStableScroll(fn) {
 function toNumberBR(x) {
     if (x === null || x === undefined || x === '') return 0;
     if (typeof x === 'number') return x;
-    const s = String(x).trim();
-    const clean = s.replace(/[R$\s]/g, '').replace(/\./g, '').replace(/,/g, '.');
-    const n = parseFloat(clean);
+    let s = String(x).trim().replace(/[R$\s]/g, '');
+    // Se tiver vírgula, assume formato BR (1.000,50 -> 1000.50)
+    if (s.includes(',')) {
+        s = s.replace(/\./g, '').replace(',', '.');
+    }
+    const n = parseFloat(s);
     return isNaN(n) ? 0 : n;
+}
+
+function parseDateBR(val) {
+    if (!val) return null;
+    if (typeof val === 'number') return parseDateExcel(val);
+    const s = String(val).trim();
+    // Tenta formato DD/MM/AAAA
+    const m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
+    const d = new Date(s);
+    return isNaN(+d) ? null : d;
 }
 function parseDateExcel(v) {
     if (typeof v === 'number') {
@@ -183,21 +185,32 @@ function findCol(headers, aliases) {
 }
 
 /* ===== Estado ===== */
+const DOTACAO_CODES = [
+    "155257016", "155256846", "155257015", "155256845", "155257959",
+    "155257958", "155257960", "155257961", "155256245", "155255887",
+    "155256390", "155256683", "155257695", "155256707", "9840660180",
+    "9840659980", "9844133580", "155255862", "155255800", "9809532380",
+    "7095074", "7095225", "7094994", "7095069", "7094991", "7094970",
+    "7094971", "7095178", "7094996", "7094995", "7095416", "7094998"
+];
+
 let allData = [];
 let filtered = [];
-let charts = { periodo: null, qtdPeriodo: null, valorItem: null, loja: null, modelo: null, vendedorValor: null, faixas: null, diasEstoque: null };
+const state = { search: '', Grupo: [], Giro: [], CodItem: [], Descricao: [], Aging: [], Loja: [], Dotacao: [], FaixaPreco: [], Reserva: [] };
+const sortState = { key: 'Quantidade', type: 'num', dir: 'desc' };
+let charts = { periodo: null, valorItem: null, loja: null, aging: null };
 
-/* placas excluídas */
-const excludedPlates = new Set();
-
-const state = { search: '', Loja: [], Vendedor: [], Modelo: [], Mes: [], Nota: [], CodItem: [], GrupoInterno: [], Dias: [] };
-const sortState = { key: null, type: null, dir: 'desc' };
-
-/* ===== Estado da Tabela sob Demanda ===== */
-let tableLoaded = false;
-let barFilter = null; // { type: 'periodo'|'valorItem'|'modelo'|'loja'|'faixas'|'vendedorValor'|'diasEstoque', label: string }
-let currentPage = 1;
-const pageSize = 50;
+function getAgingLabel(r) {
+    if (!r.UltimaCompraDate) return 'acima de 1000 dias';
+    const today = new Date();
+    const diffTime = today - r.UltimaCompraDate;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays <= 90) return 'de 0 a 90 dias';
+    if (diffDays <= 180) return 'de 91 a 180 dias';
+    if (diffDays <= 365) return 'de 181 a 365 dias';
+    if (diffDays <= 1000) return 'de 366 a 1000 dias';
+    return 'acima de 1000 dias';
+}
 
 
 /* ===== Pílulas ===== */
@@ -286,19 +299,19 @@ class MultiPill {
     }
 }
 const pillInstances = {
-    Mes: new MultiPill({ label: 'Período', getter: () => state.Mes, setter: v => state.Mes = v }),
-    Loja: new MultiPill({ label: 'Loja', getter: () => state.Loja, setter: v => state.Loja = v }),
-    Vendedor: new MultiPill({ label: 'Vendedor', getter: () => state.Vendedor, setter: v => state.Vendedor = v }),
-    Modelo: new MultiPill({ label: 'Peça', getter: () => state.Modelo, setter: v => state.Modelo = v }),
-    Nota: new MultiPill({ label: 'Número da Nota', getter: () => state.Nota, setter: v => state.Nota = v }),
-    CodItem: new MultiPill({ label: 'Cód. Item', getter: () => state.CodItem, setter: v => state.CodItem = v }),
-    GrupoInterno: new MultiPill({ label: 'Grupo Interno', getter: () => state.GrupoInterno, setter: v => state.GrupoInterno = v }),
-    Dias: new MultiPill({ label: 'Dias', getter: () => state.Dias, setter: v => state.Dias = v }),
+    Grupo: new MultiPill({ label: 'Grupo/Classe', getter: () => state.Grupo, setter: v => state.Grupo = v }),
+    CodItem: new MultiPill({ label: 'Código do Item', getter: () => state.CodItem, setter: v => state.CodItem = v }),
+    Descricao: new MultiPill({ label: 'Descrição', getter: () => state.Descricao, setter: v => state.Descricao = v }),
+    Aging: new MultiPill({ label: 'Dias de Estoque', getter: () => state.Aging, setter: v => state.Aging = v }),
+    Loja: new MultiPill({ label: 'Empresa', getter: () => state.Loja, setter: v => state.Loja = v }),
+    Dotacao: new MultiPill({ label: 'Dotação', getter: () => state.Dotacao, setter: v => state.Dotacao = v }),
+    FaixaPreco: new MultiPill({ label: 'Faixa de Preço', getter: () => state.FaixaPreco, setter: v => state.FaixaPreco = v }),
+    Reserva: new MultiPill({ label: 'Reserva', getter: () => state.Reserva, setter: v => state.Reserva = v }),
 };
 (function mountPills() {
     const holder = document.getElementById('filters');
-    ['Mes', 'Loja', 'Vendedor', 'Modelo', 'Nota', 'CodItem', 'GrupoInterno', 'Dias'].forEach(k => {
-        holder.appendChild(pillInstances[k].el);
+    ['Loja', 'CodItem', 'Grupo', 'Descricao', 'Dotacao', 'FaixaPreco', 'Reserva', 'Aging'].forEach(k => {
+        if (pillInstances[k]) holder.appendChild(pillInstances[k].el);
     });
 })();
 
@@ -326,123 +339,129 @@ async function readFile(file) {
         }
     } catch (err) {
         console.error(err);
-        showError('Falha ao ler o arquivo. Verifique se não está protegido e se possui ao menos uma planilha com dados.');
+        showError('Falha ao processar arquivo: ' + (err.message || 'Erro desconhecido') + '. Se o arquivo estiver aberto no Excel, feche-o e tente novamente.');
     }
 }
 
 /* ===== Processamento ===== */
 function processWorkbook(wb) {
-    const name = wb.SheetNames.find(n => {
-        const ws = wb.Sheets[n];
-        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
-        return (range.e.r - range.s.r) >= 1;
-    }) || wb.SheetNames[0];
+    // Tenta encontrar a primeira aba com dados
+    let ws = null;
+    let sheetName = "";
+    for (const name of wb.SheetNames) {
+        const testWs = wb.Sheets[name];
+        const range = XLSX.utils.decode_range(testWs['!ref'] || 'A1:A1');
+        if ((range.e.r - range.s.r) >= 0) { // pelo menos 1 linha
+            ws = testWs;
+            sheetName = name;
+            break;
+        }
+    }
 
-    const ws = wb.Sheets[name];
-    if (!ws) { showError('A planilha parece vazia.'); return; }
+    if (!ws) { showError('A planilha parece estar vazia em todas as abas.'); return; }
 
     const mat = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false });
-    if (!mat || !mat.length) { showError('Não encontrei linhas com dados.'); return; }
+    if (!mat || !mat.length) { showError('Não encontrei linhas com dados na aba "' + sheetName + '".'); return; }
 
-    let headerIdx = detectHeaderRow(mat);
-    const headers = (mat[headerIdx] || []).map(x => String(x || '').trim());
-    const dataRows = mat.slice(headerIdx + 1);
+    console.log('Dados lidos (matriz):', mat.slice(0, 5)); // Log para debug
 
-    if (headers.filter(x => x).length < 2) {
-        showWarn('Não consegui identificar o cabeçalho com clareza. Vou considerar a primeira linha com dados.');
+    // Detecta se a linha parece ser um cabeçalho ou dado direto (pulando as 2 primeiras linhas de sistema)
+    let headerIdx = -1;
+    for (let i = 2; i < Math.min(10, mat.length); i++) {
+        const row = mat[i];
+        // Se a linha tem textos como "Código", "Descrição", "Item", assumimos que é cabeçalho
+        const rowStr = JSON.stringify(row).toLowerCase();
+        if (rowStr.includes('código') || rowStr.includes('item') || rowStr.includes('descrição') || rowStr.includes('estoque')) {
+            headerIdx = i;
+            break;
+        }
+    }
+
+    let headers = [];
+    let dataRows = [];
+
+    if (headerIdx > -1) {
+        headers = mat[headerIdx].map(h => String(h || '').trim());
+        dataRows = mat.slice(headerIdx + 1);
+    } else {
+        // Se não detectou cabeçalho, assume que os dados começam na linha 3 (índice 2)
+        headers = [];
+        dataRows = mat.slice(2);
     }
 
     parseRows(headers, dataRows);
 }
-function detectHeaderRow(mat) {
-    let best = 0, bestIdx = 0;
-    const maxCheck = Math.min(10, mat.length);
-    for (let i = 0; i < maxCheck; i++) {
-        const row = mat[i] || [];
-        const filled = row.filter(c => c !== undefined && c !== null && String(c).trim() !== '').length;
-        const hasText = row.some(c => typeof c === 'string' && c.trim().length > 0);
-        if (hasText && filled > best) { best = filled; bestIdx = i; }
-    }
-    return bestIdx;
-}
 
 /* ===== Leitura das linhas ===== */
-/* Mapeamento de código de loja */
-function mapLoja(raw) {
-    const s = String(raw ?? '').trim();
-    if (s === '10') return 'Matriz';
-    if (s === '11') return 'Zona Sul';
-    if (s === '12') return 'Viamão';
-    if (s === '13') return 'Gravataí';
-    return s || 'Não informado';
-}
-
 function parseRows(headers, data) {
-    const idx = {
-        vendedor: findCol(headers, ['Vendedor', 'VENDEDOR']),
-        loja: 0, /* coluna A conforme especificado */
-        codItem: findCol(headers, ['Cód. Item', 'Cd. Item', 'Cod Item', 'Item']),
-        descricao: findCol(headers, ['Descrição', 'Descricao', 'Descriao', 'DESCRIÇÃO']),
-        quantidade: findCol(headers, ['Quantidade', 'Qtde', 'Qtd', 'QUANTIDADE']),
-        precoFinal: findCol(headers, ['Preço Final', 'Preco Final', 'Valor', 'PREÇO FINAL']),
-        venda: findCol(headers, ['Venda', 'Data Venda', 'Data', 'DATA']),
-        nota: findCol(headers, ['Nota', 'NF', 'NOTA']),
-        grupoInterno: 18, /* coluna S (índice 18) */
-        qtdPecas: 7,     /* coluna H (índice 7) */
-        giro: 2,         /* coluna C (índice 2) */
+    // Mapeamento Flexível: Tenta achar pelo nome, se não achar usa a letra da coluna (A=0, B=1...)
+    const getIdx = (aliases, defaultIdx) => {
+        const found = findCol(headers, aliases);
+        return found >= 0 ? found : defaultIdx;
     };
 
-    allData = data.map(r => {
-        const get = (i) => i >= 0 ? r[i] : undefined;
-        const vendaCell = get(idx.venda);
-        const mesCap = monthNameFromCell(vendaCell);
+    const idx = {
+        codItem: getIdx(['Código do Item', 'Código'], 0), // A
+        descricao: getIdx(['Descrição'], 1),              // B
+        quantidade: getIdx(['Quantidade da peça em estoque', 'Qtd', 'Quantidade'], 3), // D
+        giro: getIdx(['Giro'], 2), 
+        precoCusto: getIdx(['Preço de Custo', 'Custo'], 4), 
+        precoVenda: getIdx(['Preço de Venda', 'Venda'], 7), // H
+        ultimaVenda: getIdx(['Última Venda', 'Data Última Venda'], 18), // S
+        loja: getIdx(['Nome da Empresa', 'Empresa', 'Loja'], 11), // L
+        ultimaCompra: getIdx(['Data da compra da peça', 'Última Compra'], 17), // R
+        grupo: getIdx(['Grupo'], 19), // T
+        colunaK: 10 // K
+
+    };
+
+    allData = data.filter(r => r.length > 0).map(r => {
+        const get = (i) => r[i];
+        
+        const fmtDate = (val) => {
+            if (!val) return '—';
+            if (typeof val === 'number') {
+                // SheetJS às vezes lê datas como números de série do Excel
+                try {
+                    return parseDateExcel(val).toLocaleDateString('pt-BR');
+                } catch(e) { return String(val); }
+            }
+            return String(val);
+        };
+
 
         return {
-            Vendedor: get(idx.vendedor) ?? 'Não informado',
-            Loja: mapLoja(r[0]),
-            DataVenda: vendaCell ? (typeof vendaCell === 'number' ? parseDateExcel(vendaCell).toLocaleDateString('pt-BR') : String(vendaCell)) : '—',
-            Nota: get(idx.nota) ?? '—',
-            Giro: (() => { const g = toNumberBR(get(idx.giro)); return g >= 46000 ? 1001 : g; })(),
             CodItem: get(idx.codItem) ?? '—',
-            QtdPecas: toNumberBR(get(idx.qtdPecas)),
-            GrupoInterno: String(get(idx.grupoInterno) ?? '—').trim() || '—',
             Descricao: get(idx.descricao) ?? '—',
             Quantidade: toNumberBR(get(idx.quantidade)),
-            PrecoFinal: toNumberBR(get(idx.precoFinal)),
-            MesNome: mesCap,
-            DiaVenda: dayFromCell(vendaCell)
+            Giro: toNumberBR(get(idx.giro)),
+            PrecoCusto: toNumberBR(get(idx.precoCusto)),
+            PrecoVenda: toNumberBR(get(idx.precoVenda)),
+            UltimaVenda: fmtDate(get(idx.ultimaVenda)),
+            UltimaCompra: fmtDate(get(idx.ultimaCompra)),
+            UltimaCompraDate: parseDateBR(get(idx.ultimaCompra)),
+            Grupo: get(idx.grupo) ?? 'Outros',
+            Loja: get(idx.loja) ?? 'Não informada',
+            ValorK: toNumberBR(get(idx.colunaK)),
+            ValorReserva: toNumberBR(get(4))
         };
     });
 
-    pillInstances.Loja.setOptions(allData.map(x => x.Loja));
-    pillInstances.Vendedor.setOptions(allData.map(x => x.Vendedor));
-    pillInstances.Modelo.setOptions(allData.map(x => getItemKey(x)));
-    pillInstances.Nota.setOptions(allData.map(x => x.Nota));
+    if (allData.length === 0) {
+        showWarn('A planilha foi lida, mas nenhuma linha de dado válida foi encontrada.');
+        return;
+    }
+
+    pillInstances.Grupo.setOptions(allData.map(x => x.Grupo));
     pillInstances.CodItem.setOptions(allData.map(x => x.CodItem));
-    pillInstances.GrupoInterno.setOptions(allData.map(x => x.GrupoInterno));
-
-    /* Filtro Dias — faixas fixas baseadas na coluna C */
-    const FAIXAS_DIAS = [
-        'de 0 a 90 dias',
-        'de 91 a 180 dias',
-        'de 181 a 365 dias',
-        'de 366 a 1000 dias',
-        'acima de 1000 dias',
-    ];
-    pillInstances.Dias.setOptions(FAIXAS_DIAS, { keepOrder: true });
-
-    const orderMes = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-    const mesesUnicos = [...new Set(allData
-        .map(x => x.MesNome)
-        .filter(m => m && m !== 'Não informado'))]
-        .sort((a, b) => {
-            const pa = a.split(' '), pb = b.split(' ');
-            const ma = orderMes.indexOf(pa[0].toLowerCase()), mb = orderMes.indexOf(pb[0].toLowerCase());
-            const ya = parseInt(pa[1], 10), yb = parseInt(pb[1], 10);
-            if (ya !== yb) return ya - yb;
-            return ma - mb;
-        });
-    pillInstances.Mes.setOptions(mesesUnicos, { keepOrder: true });
+    pillInstances.Descricao.setOptions(allData.map(x => x.Descricao));
+    pillInstances.Loja.setOptions(allData.map(x => x.Loja));
+    pillInstances.Aging.setOptions([
+        'de 0 a 90 dias', 'de 91 a 180 dias', 'de 181 a 365 dias', 'de 366 a 1000 dias', 'acima de 1000 dias'
+    ], { keepOrder: true });
+    pillInstances.Dotacao.setOptions(['Sim', 'Não'], { keepOrder: true });
+    pillInstances.FaixaPreco.setOptions(['de R$ 0,01 até R$ 1,01', 'de R$ 1,02 até R$ 499,00', 'de R$ 500,00 para cima'], { keepOrder: true });
+    pillInstances.Reserva.setOptions(['Sim', 'Não'], { keepOrder: true });
 
     applyFilters();
 }
@@ -452,242 +471,113 @@ document.getElementById('q').addEventListener('input', e => { state.search = e.t
 document.getElementById('clearAll').addEventListener('click', () => {
     withStableScroll(() => {
         state.search = ''; document.getElementById('q').value = '';
-        state.Loja = []; state.Vendedor = []; state.Modelo = []; state.Mes = [];
-        state.Nota = []; state.CodItem = []; state.GrupoInterno = []; state.Dias = [];
+        state.Grupo = []; state.Giro = []; state.CodItem = []; state.Descricao = []; state.Loja = []; state.Aging = []; state.Dotacao = []; state.FaixaPreco = []; state.Reserva = [];
         Object.values(pillInstances).forEach(p => { p.setter([]); p.render(); p.sync(); });
         applyFilters();
     });
 });
+document.getElementById('exportExcel').addEventListener('click', () => {
+    if (!filtered || filtered.length === 0) {
+        showWarn('Não há dados para exportar.');
+        return;
+    }
+    
+    const sortedData = sortRows([...filtered]);
+    const dataToExport = sortedData.map(r => ({
+        'Empresa': r.Loja,
+        'Cód. Item': r.CodItem,
+        'Descrição': r.Descricao,
+        'Quantidade': r.Quantidade,
+        'Giro': r.Giro,
+        'Preço Custo': r.PrecoCusto,
+        'Preço Venda': r.PrecoVenda,
+        'Últ. Venda': r.UltimaVenda,
+        'Últ. Compra': r.UltimaCompra,
+        'Dias de Estoque': getAgingLabel(r),
+        'Grupo/Classe': r.Grupo
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Estoque");
+    
+    // Auto-size columns based on header length and content max length
+    const cols = Object.keys(dataToExport[0] || {}).map(k => ({ wch: Math.max(k.length, 10) }));
+    ws['!cols'] = cols;
+
+    XLSX.writeFile(wb, "estoque_analise.xlsx");
+});
 
 function applyFilters() {
     filtered = allData.filter(r => {
-        const itemKey = getItemKey(r);
-        const lojaOk = state.Loja.length === 0 || state.Loja.includes(r.Loja);
-        const vendOk = state.Vendedor.length === 0 || state.Vendedor.includes(r.Vendedor);
-        const modOk = state.Modelo.length === 0 || state.Modelo.includes(itemKey) || state.Modelo.includes(r.Descricao) || state.Modelo.includes(String(r.CodItem));
-        const mesOk = state.Mes.length === 0 || state.Mes.includes(r.MesNome);
-        const notaOk = state.Nota.length === 0 || state.Nota.includes(r.Nota);
+        const grupoOk = state.Grupo.length === 0 || state.Grupo.includes(r.Grupo);
+        const giroOk = state.Giro.length === 0 || state.Giro.includes(r.Giro);
         const codOk = state.CodItem.length === 0 || state.CodItem.includes(r.CodItem);
-        const grupoOk = state.GrupoInterno.length === 0 || state.GrupoInterno.includes(r.GrupoInterno);
-        const diasOk = state.Dias.length === 0 || state.Dias.some(faixa => {
-            const g = +r.Giro || 0;
-            if (faixa.includes('0 a 90'))       return g >= 0 && g <= 90;
-            if (faixa.includes('91 a 180'))     return g >= 91 && g <= 180;
-            if (faixa.includes('181 a 365'))    return g >= 181 && g <= 365;
-            if (faixa.includes('366 a 1000'))   return g >= 366 && g <= 1000;
-            if (faixa.includes('1000') || faixa.includes('1001')) return g >= 1001;
-            return false;
-        });
+        const descOk = state.Descricao.length === 0 || state.Descricao.includes(r.Descricao);
+        const lojaOk = state.Loja.length === 0 || state.Loja.includes(r.Loja);
+        const agingOk = state.Aging.length === 0 || state.Aging.includes(getAgingLabel(r));
+
+        let dotacaoOk = true;
+        if (state.Dotacao.length === 1) {
+            const isDotacao = DOTACAO_CODES.includes(String(r.CodItem));
+            if (state.Dotacao.includes("Sim") && !isDotacao) dotacaoOk = false;
+            if (state.Dotacao.includes("Não") && isDotacao) dotacaoOk = false;
+        }
+
+        let faixaPrecoOk = true;
+        if (state.FaixaPreco.length > 0) {
+            faixaPrecoOk = state.FaixaPreco.some(f => {
+                if (f === 'de R$ 0,01 até R$ 1,01') return r.ValorK >= 0.01 && r.ValorK <= 1.01;
+                if (f === 'de R$ 1,02 até R$ 499,00') return r.ValorK >= 1.02 && r.ValorK <= 499.00;
+                if (f === 'de R$ 500,00 para cima') return r.ValorK >= 500.00;
+                return false;
+            });
+        }
+
+        let reservaOk = true;
+        if (state.Reserva.length === 1) {
+            const isReserva = (r.ValorReserva > 0);
+            if (state.Reserva.includes("Sim") && !isReserva) reservaOk = false;
+            if (state.Reserva.includes("Não") && isReserva) reservaOk = false;
+        }
 
         const q = state.search;
-        const qOk = !q || [r.CodItem, r.Descricao].some(vv => (vv || '').toString().toLowerCase().includes(q));
+        const qOk = !q || [r.Descricao, r.CodItem, r.Grupo, r.Loja].some(vv => (vv || '').toString().toLowerCase().includes(q));
 
-        return lojaOk && vendOk && modOk && mesOk && notaOk && codOk && grupoOk && diasOk && qOk;
+        return grupoOk && giroOk && codOk && descOk && lojaOk && agingOk && dotacaoOk && faixaPrecoOk && reservaOk && qOk;
     });
-    currentPage = 1;
     renderKpiGroups();
+    renderTable(sortRows([...filtered]));
     renderCharts(filtered);
-    renderTableSection();
 }
-
-/* ===== Filtro de Barra dos Gráficos ===== */
-function filterByBar(rows, filter) {
-    if (!filter || !filter.label) return rows;
-    const { type, label } = filter;
-
-    return rows.filter(r => {
-        if (type === 'periodo') return r.MesNome === label;
-        if (type === 'valorItem' || type === 'modelo') {
-            const key = getItemKey(r);
-            return key === label || (r.Descricao || '—') === label || String(r.CodItem || '') === label;
-        }
-        if (type === 'loja') return (r.Loja || 'Não informado') === label;
-        if (type === 'vendedorValor') return (r.Vendedor || 'Não informado') === label;
-        if (type === 'faixas') {
-            const v = +r.PrecoFinal || 0;
-            if (label === 'Até R$ 50') return v <= 50;
-            if (label === 'R$ 50–200') return v > 50 && v <= 200;
-            if (label === 'R$ 200–500') return v > 200 && v <= 500;
-            if (label === 'R$ 500–1000') return v > 500 && v <= 1000;
-            if (label === 'R$ 1000+') return v > 1000;
-            return false;
-        }
-        if (type === 'diasEstoque') {
-            const g = +r.Giro || 0;
-            if (label.includes('0 a 90')) return g >= 0 && g <= 90;
-            if (label.includes('91 a 180')) return g >= 91 && g <= 180;
-            if (label.includes('181 a 365')) return g >= 181 && g <= 365;
-            if (label.includes('366 a 1000')) return g >= 366 && g <= 1000;
-            if (label.includes('1000') || label.includes('1001')) return g >= 1001;
-            return false;
-        }
-        return true;
-    });
-}
-
-function renderTableSection() {
-    const chipEl = document.getElementById('barFilterChip');
-    const clearBtn = document.getElementById('clearBarFilterBtn');
-    const toggleBtn = document.getElementById('toggleTableBtn');
-    const placeholder = document.getElementById('tablePlaceholder');
-    const gridWrap = document.getElementById('gridWrap');
-
-    let currentRows = barFilter ? filterByBar(filtered, barFilter) : filtered;
-
-    if (barFilter && barFilter.label) {
-        chipEl.style.display = 'inline-block';
-        chipEl.textContent = `Filtrado por: ${barFilter.label} (${NUM(currentRows.length)} peças)`;
-        clearBtn.style.display = 'inline-block';
-    } else {
-        chipEl.style.display = 'none';
-        clearBtn.style.display = 'none';
-    }
-
-    if (!tableLoaded) {
-        placeholder.style.display = 'block';
-        gridWrap.style.display = 'none';
-        toggleBtn.innerHTML = `<i class="fa-solid fa-folder-open"></i> Carregar Peças (${NUM(currentRows.length)})`;
-    } else {
-        placeholder.style.display = 'none';
-        gridWrap.style.display = 'block';
-        toggleBtn.innerHTML = `<i class="fa-solid fa-folder-minus"></i> Ocultar Peças`;
-
-        const sorted = sortRows([...currentRows]);
-        renderTableSlice(sorted);
-    }
-}
-
-function renderTableSlice(rows) {
-    const total = rows.length;
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
-    if (currentPage > totalPages) currentPage = totalPages;
-    if (currentPage < 1) currentPage = 1;
-
-    const startIdx = (currentPage - 1) * pageSize;
-    const endIdx = Math.min(startIdx + pageSize, total);
-    const slice = rows.slice(startIdx, endIdx);
-
-    renderTable(slice);
-
-    const pagEl = document.getElementById('tablePagination');
-    if (!pagEl) return;
-
-    if (total === 0) {
-        pagEl.innerHTML = `<div class="pagination-info">Nenhuma peça para exibir</div>`;
-        return;
-    }
-
-    pagEl.innerHTML = `
-        <div class="pagination-info">Exibindo ${NUM(startIdx + 1)}–${NUM(endIdx)} de ${NUM(total)} peças</div>
-        <div class="pagination-controls">
-            <button class="pagination-btn" id="pagFirst" ${currentPage === 1 ? 'disabled' : ''}><i class="fa-solid fa-angles-left"></i></button>
-            <button class="pagination-btn" id="pagPrev" ${currentPage === 1 ? 'disabled' : ''}><i class="fa-solid fa-angle-left"></i></button>
-            <span class="pagination-info" style="margin: 0 6px;">Pág. ${currentPage} de ${totalPages}</span>
-            <button class="pagination-btn" id="pagNext" ${currentPage === totalPages ? 'disabled' : ''}><i class="fa-solid fa-angle-right"></i></button>
-            <button class="pagination-btn" id="pagLast" ${currentPage === totalPages ? 'disabled' : ''}><i class="fa-solid fa-angles-right"></i></button>
-        </div>
-    `;
-
-    document.getElementById('pagFirst')?.addEventListener('click', () => { currentPage = 1; renderTableSlice(rows); });
-    document.getElementById('pagPrev')?.addEventListener('click', () => { currentPage--; renderTableSlice(rows); });
-    document.getElementById('pagNext')?.addEventListener('click', () => { currentPage++; renderTableSlice(rows); });
-    document.getElementById('pagLast')?.addEventListener('click', () => { currentPage = totalPages; renderTableSlice(rows); });
-}
-
-/* Event listeners da Tabela sob Demanda */
-document.getElementById('toggleTableBtn')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    tableLoaded = !tableLoaded;
-    renderTableSection();
-});
-document.getElementById('tableToggleBar')?.addEventListener('click', (e) => {
-    if (e.target.closest('button')) return;
-    tableLoaded = !tableLoaded;
-    renderTableSection();
-});
-document.getElementById('clearBarFilterBtn')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    barFilter = null;
-    currentPage = 1;
-    renderTableSection();
-});
 
 /* ===== KPIs (cálculo) ===== */
 function calcKPIs(rows) {
-    const n = rows.length;
-    const codigosUnicos = new Set(
-        rows
-            .map(r => (r.CodItem !== undefined && r.CodItem !== null) ? String(r.CodItem).trim() : '')
-            .filter(c => c && c !== '—' && c !== 'null' && c !== 'undefined')
-    );
-    const qtdItens = codigosUnicos.size;
-    const faturamentoTotal = rows.reduce((s, r) => s + (+r.PrecoFinal || 0), 0);
-    const qtdTotal = rows.reduce((s, r) => s + (+r.QtdPecas || +r.Quantidade || 0), 0);
-    const ticketMedio = n ? faturamentoTotal / n : 0;
-    const itensPorVenda = n ? qtdTotal / n : 0;
+    const totalItens = rows.reduce((s, r) => s + (+r.Quantidade || 0), 0);
 
-    const itemMap = {};
+    // Contagem de itens únicos baseada no código do item (ou descrição caso não haja código)
+    const codigosUnicos = new Set();
+    let semCodigo = 0;
     rows.forEach(r => {
-        const key = getItemKey(r);
-        itemMap[key] = (itemMap[key] || 0) + (+r.QtdPecas || +r.Quantidade || 0);
+        const cod = (r.CodItem !== undefined && r.CodItem !== null) ? String(r.CodItem).trim() : '';
+        if (cod && cod !== '—') {
+            codigosUnicos.add(cod);
+        } else if (r.Descricao && String(r.Descricao).trim() && String(r.Descricao).trim() !== '—') {
+            codigosUnicos.add('DESC:' + String(r.Descricao).trim());
+        } else {
+            semCodigo++;
+        }
     });
-    const itemMaisVendido = Object.entries(itemMap).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+    const totalVariedade = codigosUnicos.size + semCodigo;
 
-    const giroVals = rows.map(r => +r.Giro || 0).filter(v => v > 0);
-    const giroMedio = giroVals.length ? giroVals.reduce((a, b) => a + b, 0) / giroVals.length : 0;
+    const valorCustoTotal = rows.reduce((s, r) => s + ((+r.Quantidade || 0) * (+r.PrecoCusto || 0)), 0);
+    const valorVendaTotal = rows.reduce((s, r) => s + ((+r.Quantidade || 0) * (+r.PrecoVenda || 0)), 0);
 
     return {
-        n, qtdItens, faturamentoTotal, qtdTotal, ticketMedio, itensPorVenda, itemMaisVendido, giroMedio
+        totalItens, totalVariedade, valorCustoTotal, valorVendaTotal
     };
 }
 
-/* ===== STORYTELLING ===== */
-function renderInsights(rows) {
-    const grid = document.getElementById('insightsGrid');
-    grid.innerHTML = '';
-    const n = rows.length;
-
-    if (!n) {
-        grid.innerHTML = `
-    <div class="insight-card">
-        <div class="insight-ico"><i class="fa-solid fa-circle-info"></i></div>
-        <div class="insight-body">
-            <div class="insight-head">Sem dados no filtro</div>
-            <div class="insight-txt muted">Ajuste os filtros para ver os principais insights.</div>
-        </div>
-    </div>`;
-        return;
-    }
-
-    const k = calcKPIs(rows);
-
-    const lojaCount = {};
-    rows.forEach(r => { const l = r.Loja || 'Não informado'; lojaCount[l] = (lojaCount[l] || 0) + 1; });
-    const topLoja = Object.entries(lojaCount).sort((a, b) => b[1] - a[1])[0];
-
-    const vendCount = {};
-    rows.forEach(r => { const v = r.Vendedor || 'Não informado'; vendCount[v] = (vendCount[v] || 0) + 1; });
-    const topVend = Object.entries(vendCount).sort((a, b) => b[1] - a[1])[0];
-
-    const cards = [
-        { icon: 'fa-tags', head: 'Peça destaque', text: `${k.itemMaisVendido} lidera em quantidade.` },
-        { icon: 'fa-store', head: 'Loja com mais atendimentos', text: `${topLoja ? topLoja[0] : '—'} lidera com ${NUM(topLoja ? topLoja[1] : 0)} venda(s).` },
-        { icon: 'fa-user-tie', head: 'Vendedor destaque', text: `${topVend ? topVend[0] : '—'} soma ${NUM(topVend ? topVend[1] : 0)} venda(s).` },
-        { icon: 'fa-ticket', head: 'Ticket médio por item', text: `${BRL(k.ticketMedio)} por peça vendida.` },
-        { icon: 'fa-cubes', head: 'Média de itens', text: `${k.itensPorVenda.toFixed(1).replace('.', ',')} itens por nota.` },
-        { icon: 'fa-sack-dollar', head: 'Faturamento Total', text: `${BRL(k.faturamentoTotal)} acumulado.` }
-    ];
-
-    grid.innerHTML = cards.map(c => `
-<div class="insight-card">
-    <div class="insight-ico"><i class="fa-solid ${c.icon}"></i></div>
-    <div class="insight-body">
-        <div class="insight-head">${c.head}</div>
-        <div class="insight-txt">${c.text}</div>
-    </div>
-</div>
-`).join('');
-}
 
 /* ===== KPIs AGRUPADOS ===== */
 function renderKpiGroups() {
@@ -695,20 +585,18 @@ function renderKpiGroups() {
 
     const gruposHTML = `
 <div class="kpi-group">
+
 <div class="kpi-grid">
-    <div class="kpi"><div class="lab">Quantidade de Itens</div><div class="val">${NUM(k.qtdItens)}</div></div>
-    <div class="kpi"><div class="lab">Qtd. Peças Vendidas</div><div class="val">${NUM(k.qtdTotal)}</div></div>
-    <div class="kpi"><div class="lab">Faturamento Total</div><div class="val">${BRL(k.faturamentoTotal)}</div></div>
-    <div class="kpi"><div class="lab">Ticket Médio (Item)</div><div class="val">${BRL(k.ticketMedio)}</div></div>
-    <div class="kpi"><div class="lab">Giro Médio</div><div class="val">${k.giroMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</div></div>
-    <div class="kpi"><div class="lab">Item Mais Vendido</div><div class="val" style="font-size: 1rem;">${k.itemMaisVendido}</div></div>
+    <div class="kpi"><div class="lab">Total de Peças</div><div class="val">${NUM(k.totalItens)}</div></div>
+    <div class="kpi"><div class="lab">Quantidade de Itens</div><div class="val">${NUM(k.totalVariedade)}</div></div>
+    <div class="kpi"><div class="lab">Valor Total (Custo)</div><div class="val">${BRL(k.valorCustoTotal)}</div></div>
+    <div class="kpi"><div class="lab">Valor Total (Venda)</div><div class="val">${BRL(k.valorVendaTotal)}</div></div>
 </div>
 </div>
 `;
     document.getElementById('kpiGroups').innerHTML = gruposHTML;
 }
 
-/* ===== Ordenação/Tabela ===== */
 /* ===== Ordenação/Tabela ===== */
 const collator = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' });
 function sortRows(rows) {
@@ -729,16 +617,16 @@ function renderTable(rows) {
     for (const r of rows) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-    <td class="cell-vendedor" style="cursor:pointer; text-decoration:underline;">${r.Vendedor || '—'}</td>
     <td>${r.Loja || '—'}</td>
-    <td>${r.DataVenda || '—'}</td>
-    <td>${r.Nota || '—'}</td>
     <td>${r.CodItem || '—'}</td>
-    <td>${NUM(r.QtdPecas)}</td>
-    <td>${r.GrupoInterno || '—'}</td>
     <td>${r.Descricao || '—'}</td>
     <td>${NUM(r.Quantidade)}</td>
-    <td>${BRL(r.PrecoFinal)}</td>
+    <td>${NUM(r.Giro)}</td>
+    <td>${BRL(r.PrecoCusto)}</td>
+    <td>${BRL(r.PrecoVenda)}</td>
+    <td>${r.UltimaVenda || '—'}</td>
+    <td>${r.UltimaCompra || '—'}</td>
+    <td>${r.Grupo || '—'}</td>
 `;
         tb.appendChild(tr);
     }
@@ -757,41 +645,12 @@ function initSorting() {
             th.classList.add('active');
             const icon = th.querySelector('.sort');
             icon.className = 'fa-solid ' + (sortState.dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down') + ' sort';
-            renderTableSection();
+            renderTable(sortRows([...filtered]));
         }));
     });
 }
 initSorting();
 
-/* seleção pelo vendedor e exclusão por placa */
-function toggleVendorSelection(name) {
-    if (!name || name === '—' || name === 'Não informado') return;
-    const set = new Set(state.Vendedor);
-    if (set.has(name)) set.delete(name); else set.add(name);
-    state.Vendedor = [...set];
-    pillInstances.Vendedor.sync();
-    withStableScroll(() => applyFilters());
-}
-document.querySelector('#grid tbody').addEventListener('click', (e) => {
-    const cell = e.target.closest('td');
-    if (!cell) return;
-
-    if (cell.classList.contains('cell-vendedor')) {
-        const name = (cell.textContent || '').trim();
-        toggleVendorSelection(name);
-        return;
-    }
-
-    if (cell.classList.contains('cell-placa')) {
-        const placa = (cell.textContent || '').trim();
-        withStableScroll(() => {
-            if (excludedPlates.has(placa)) excludedPlates.delete(placa);
-            else excludedPlates.add(placa);
-            applyFilters();
-        });
-        return;
-    }
-});
 
 /* Tooltips e datalabels */
 function pctTooltip() {
@@ -824,568 +683,304 @@ function datalabelsCenter() {
     };
 }
 
-/* Clique nas barras dos gráficos */
-function onChartBarClick(evt, elements, chartInstance, chartType) {
-    if (!elements || !elements.length) return;
-    const idx = elements[0].index;
-    const label = chartInstance.data.labels[idx];
-    if (!label) return;
-
-    barFilter = { type: chartType, label: label };
-    tableLoaded = true;
-    currentPage = 1;
-    renderTableSection();
-
-    const tableEl = document.getElementById('tableToggleBar');
-    if (tableEl) {
-        tableEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-}
-
 /* gráficos */
 function renderCharts(rows) {
     const commonOpts = { responsive: true, maintainAspectRatio: false, animation: false, plugins: { datalabels: {} } };
 
-    /* Faturamento por Período (Tooltip detalhado) */
-    const statsByMonth = {};
+    // 1. Estoque por Grupo e por Empresa
+    const statsByGroup = {};
+    const statsByLoja = {};
     rows.forEach(r => {
-        const k = r.MesNome || 'Não informado';
-        if (!statsByMonth[k]) statsByMonth[k] = { valor: 0, qtd: 0 };
-        statsByMonth[k].valor += (+r.PrecoFinal || 0);
-        statsByMonth[k].qtd += (+r.Quantidade || 0);
+        const g = r.Grupo || 'Outros';
+        if (!statsByGroup[g]) statsByGroup[g] = { qtd: 0, custo: 0 };
+        statsByGroup[g].qtd += (+r.Quantidade || 0);
+        statsByGroup[g].custo += ((+r.Quantidade || 0) * (+r.PrecoCusto || 0));
+
+        const l = r.Loja || 'Não informada';
+        if (!statsByLoja[l]) statsByLoja[l] = { qtd: 0, custo: 0, itens: 0, _codigos: new Set() };
+        statsByLoja[l].qtd += (+r.Quantidade || 0);
+        statsByLoja[l].custo += ((+r.Quantidade || 0) * (+r.PrecoCusto || 0));
+        const itemCod = (r.CodItem && r.CodItem !== '—') ? String(r.CodItem).trim() : (r.Descricao || `${r.Quantidade}_${r.PrecoCusto}`);
+        statsByLoja[l]._codigos.add(itemCod);
+        statsByLoja[l].itens = statsByLoja[l]._codigos.size;
     });
 
-    const orderMes = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-    const mesesSorted = Object.entries(statsByMonth).sort((a, b) => {
-        const pa = a[0].split(' '), pb = b[0].split(' ');
-        if (pa[0] === 'Não' || pb[0] === 'Não') return 0;
-        const ma = orderMes.indexOf(pa[0].toLowerCase()), mb = orderMes.indexOf(pb[0].toLowerCase());
-        const ya = parseInt(pa[1], 10), yb = parseInt(pb[1], 10);
-        if (ya !== yb) return ya - yb;
-        return ma - mb;
-    });
-
-    const valorValues = mesesSorted.map(x => x[1].valor);
-    const avgValor = valorValues.length ? valorValues.reduce((a, b) => a + b, 0) / valorValues.length : 0;
+    const groupsSorted = Object.entries(statsByGroup).sort((a, b) => b[1].qtd - a[1].qtd);
 
     if (charts.periodo) charts.periodo.destroy();
     charts.periodo = new Chart(document.getElementById('periodoChart').getContext('2d'), {
         type: 'bar',
         data: { 
-            labels: mesesSorted.map(x => x[0]), 
-            datasets: [
-                { 
-                    label: 'Faturamento (R$)', 
-                    data: valorValues,
-                    backgroundColor: '#10b981',
-                    borderRadius: 8,
-                    barPercentage: 0.5,
-                    categoryPercentage: 0.8,
-                    order: 2,
-                    datalabels: {
-                        display: true,
-                        backgroundColor: null,
-                        borderRadius: 0,
-                        color: '#fff',
-                        font: { weight: 'bold', size: 11 },
-                        align: 'start',
-                        anchor: 'end',
-                        padding: { top: 6 },
-                        formatter: (v) => (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' K'
-                    }
-                },
-                {
-                    label: `Média: ${(avgValor / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} K`,
-                    type: 'line',
-                    data: mesesSorted.map(() => avgValor),
-                    borderColor: '#ef4444',
-                    backgroundColor: 'rgba(239,68,68,0.08)',
-                    borderWidth: 2.5,
-                    borderDash: [8, 4],
-                    pointRadius: 0,
-                    pointHoverRadius: 6,
-                    pointHoverBackgroundColor: '#ef4444',
-                    tension: 0,
-                    order: 1,
-                    datalabels: { display: false }
-                }
-            ]
+            labels: groupsSorted.map(x => x[0]), 
+            datasets: [{ 
+                label: 'Quantidade Total', 
+                data: groupsSorted.map(x => x[1].qtd), 
+                backgroundColor: '#10b981',
+                borderRadius: 8
+            }] 
         },
         options: { 
             ...commonOpts, 
-            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.periodo, 'periodo'),
-            scales: {
-                y: {
-                    grace: '15%'
-                }
-            },
             plugins: { 
                 ...commonOpts.plugins, 
-                title: { display: true, text: 'Faturamento por Período (Mês)' },
-                datalabels: {},
-                legend: {
-                    display: true,
-                    labels: {
-                        generateLabels: (chart) => {
-                            const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                            return labels.map(l => {
-                                if (l.datasetIndex === 1) {
-                                    l.fillStyle = 'transparent';
-                                    l.strokeStyle = '#ef4444';
-                                    l.lineWidth = 2.5;
-                                    l.lineDash = [8, 4];
-                                }
-                                return l;
-                            });
-                        }
-                    }
-                },
+                legend: { display: false },
+                title: { display: true, text: 'Quantidade de Itens por Grupo' },
                 tooltip: {
                     callbacks: {
-                        label: (context) => {
-                            if (context.datasetIndex === 1) {
-                                return `Média: ${BRL(avgValor)}`;
-                            }
-                            const name = context.label;
-                            const s = statsByMonth[name] || { valor: 0, qtd: 0 };
-                            const avg = s.qtd ? s.valor / s.qtd : 0;
+                        label: (ctx) => {
+                            const grupo = groupsSorted[ctx.dataIndex];
                             return [
-                                `Faturamento: ${BRL(s.valor)}`,
-                                `Quantidade: ${NUM(s.qtd)}`,
-                                `Preço Médio: ${BRL(avg)}`
+                                `Quantidade: ${NUM(ctx.raw)}`,
+                                `${BRL(grupo[1].custo)}`
                             ];
                         }
                     }
-                }
-            } 
-        }
-    });
-
-    /* ── Quantidade Vendida por Período ── */
-    const qtdValues = mesesSorted.map(x => x[1].qtd);
-    const avgQtd = qtdValues.length ? qtdValues.reduce((a, b) => a + b, 0) / qtdValues.length : 0;
-
-    if (charts.qtdPeriodo) charts.qtdPeriodo.destroy();
-    charts.qtdPeriodo = new Chart(document.getElementById('qtdPeriodoChart').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: mesesSorted.map(x => x[0]),
-            datasets: [
-                {
-                    label: 'Quantidade Vendida',
-                    data: qtdValues,
-                    backgroundColor: '#3b82f6',
-                    borderRadius: 8,
-                    barPercentage: 0.5,
-                    categoryPercentage: 0.8,
-                    order: 2,
-                    datalabels: {
-                        display: true,
-                        backgroundColor: null,
-                        borderRadius: 0,
-                        color: '#fff',
-                        font: { weight: 'bold', size: 11 },
-                        align: 'start',
-                        anchor: 'end',
-                        padding: { top: 6 },
-                        formatter: (v) => NUM(Math.round(v))
-                    }
                 },
-                {
-                    label: `Média: ${NUM(Math.round(avgQtd))}`,
-                    type: 'line',
-                    data: mesesSorted.map(() => avgQtd),
-                    borderColor: '#ef4444',
-                    backgroundColor: 'rgba(239,68,68,0.08)',
-                    borderWidth: 2.5,
-                    borderDash: [8, 4],
-                    pointRadius: 0,
-                    pointHoverRadius: 6,
-                    pointHoverBackgroundColor: '#ef4444',
-                    tension: 0,
-                    order: 1,
-                    datalabels: { display: false }
+                datalabels: {
+                    display: true,
+                    anchor: 'end',
+                    align: 'top',
+                    color: '#333',
+                    font: { weight: 'bold', size: 10 },
+                    formatter: (v, ctx) => {
+                        const totalQtd = groupsSorted.reduce((a, b) => a + b[1].qtd, 0) || 1;
+                        const pct = ((v / totalQtd) * 100).toFixed(1).replace('.', ',');
+                        return `${NUM(v)} (${pct}%)`;
+                    }
                 }
-            ]
-        },
-        options: {
-            ...commonOpts,
-            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.qtdPeriodo, 'periodo'),
-            scales: {
-                y: { grace: '15%', beginAtZero: true }
             },
-            plugins: {
-                ...commonOpts.plugins,
-                title: { display: true, text: 'Quantidade de Peças Vendidas por Período (Mês)' },
-                datalabels: {},
-                legend: {
-                    display: true,
-                    labels: {
-                        generateLabels: (chart) => {
-                            const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                            return labels.map(l => {
-                                if (l.datasetIndex === 1) {
-                                    l.fillStyle = 'transparent';
-                                    l.strokeStyle = '#ef4444';
-                                    l.lineWidth = 2.5;
-                                    l.lineDash = [8, 4];
+            layout: { padding: { top: 30 } }
+        }
+    });
+
+    // 2. Investimento por Empresa (Custo Total e Quantidade de Itens)
+    const lojasSorted = Object.entries(statsByLoja).sort((a, b) => b[1].custo - a[1].custo);
+    const totalCustoLojas = Object.values(statsByLoja).reduce((acc, curr) => acc + curr.custo, 0) || 1;
+    const totalItensLojas = Object.values(statsByLoja).reduce((acc, curr) => acc + curr.itens, 0) || 1;
+    const totalQtdLojas = Object.values(statsByLoja).reduce((acc, curr) => acc + curr.qtd, 0) || 1;
+
+    if (charts.loja) charts.loja.destroy();
+    charts.loja = new Chart(document.getElementById('lojaChart').getContext('2d'), {
+        type: 'bar',
+        data: { 
+            labels: lojasSorted.slice(0, 10).map(x => x[0]), 
+            datasets: [{ 
+                label: 'Investimento (Custo)',
+                data: lojasSorted.slice(0, 10).map(x => x[1].custo),
+                backgroundColor: '#3b82f6',
+                borderRadius: 8
+            }] 
+        },
+        options: { 
+            ...commonOpts,
+            indexAxis: 'y',
+            plugins: { 
+                ...commonOpts.plugins, 
+                legend: { display: false },
+                title: { display: true, text: 'Estoque por Empresa' },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const val = Number(ctx.raw) || 0;
+                            const loja = lojasSorted[ctx.dataIndex]?.[1];
+                            const pctCusto = ((val / totalCustoLojas) * 100).toFixed(1).replace('.', ',');
+                            const lines = [`Investimento: ${BRL(val)} (${pctCusto}%)`];
+                            if (loja) {
+                                const pctItens = ((loja.itens / totalItensLojas) * 100).toFixed(1).replace('.', ',');
+                                lines.push(`Quantidade de Itens: ${NUM(loja.itens)} (${pctItens}%)`);
+                                if (loja.qtd !== loja.itens) {
+                                    const pctQtd = ((loja.qtd / totalQtdLojas) * 100).toFixed(1).replace('.', ',');
+                                    lines.push(`Total de Peças: ${NUM(loja.qtd)} (${pctQtd}%)`);
                                 }
-                                return l;
-                            });
+                            }
+                            return lines;
                         }
                     }
                 },
-                tooltip: {
-                    callbacks: {
-                        label: (context) => {
-                            if (context.datasetIndex === 1) {
-                                return `Média: ${NUM(Math.round(avgQtd))} peças/mês`;
-                            }
-                            const name = context.label;
-                            const s = statsByMonth[name] || { valor: 0, qtd: 0 };
-                            return [
-                                `Quantidade: ${NUM(s.qtd)} peças`,
-                                `Faturamento: ${BRL(s.valor)}`
-                            ];
-                        }
+                datalabels: {
+                    anchor: 'end',
+                    align: 'right',
+                    textAlign: 'left',
+                    color: '#444',
+                    font: { weight: 'bold', size: 10 },
+                    formatter: (v, ctx) => {
+                        const pct = ((v / totalCustoLojas) * 100).toFixed(1).replace('.', ',');
+                        const loja = lojasSorted[ctx.dataIndex]?.[1];
+                        if (!loja) return `${BRL(v)} (${pct}%)`;
+
+                        const itemLabel = loja.qtd !== loja.itens
+                            ? `${NUM(loja.itens)} ${loja.itens === 1 ? 'item' : 'itens'} (${NUM(loja.qtd)} ${loja.qtd === 1 ? 'peça' : 'peças'})`
+                            : `${NUM(loja.itens)} ${loja.itens === 1 ? 'item' : 'itens'}`;
+
+                        return [`${BRL(v)} (${pct}%)`, itemLabel];
                     }
                 }
-            }
+            },
+            layout: { padding: { right: 180 } }
         }
     });
 
-    /* Agregação centralizada para Peças (por Código + Descrição) */
-    const statsByItem = {};
+    // 3. Top 10 Itens por Valor Total em Estoque (agrupado por código do item)
+    const itemMap = new Map();
     rows.forEach(r => {
-        const k = getItemKey(r);
-        if (!statsByItem[k]) statsByItem[k] = { valor: 0, qtd: 0, cod: r.CodItem || '—', desc: r.Descricao || '—' };
-        statsByItem[k].valor += (+r.PrecoFinal || 0);
-        statsByItem[k].qtd += (+r.Quantidade || 0);
+        const cod = (r.CodItem && r.CodItem !== '—') ? String(r.CodItem).trim() : '';
+        const key = cod || String(r.Descricao || '—').trim();
+        const valor = (+r.Quantidade || 0) * (+r.PrecoCusto || 0);
+        const qtd = +r.Quantidade || 0;
+
+        if (!itemMap.has(key)) {
+            itemMap.set(key, {
+                desc: r.Descricao || '—',
+                cod: r.CodItem || '—',
+                valor: 0,
+                qtd: 0
+            });
+        }
+        const item = itemMap.get(key);
+        item.valor += valor;
+        item.qtd += qtd;
+        if (item.desc === '—' && r.Descricao) item.desc = r.Descricao;
+        if (item.cod === '—' && r.CodItem) item.cod = r.CodItem;
     });
 
-    const accessoryTooltip = {
-        callbacks: {
-            title: () => '',
-            label: (context) => {
-                const name = context.label;
-                const s = statsByItem[name] || { valor: 0, qtd: 0, cod: '—', desc: '—' };
-                const avg = s.qtd ? s.valor / s.qtd : 0;
-                return [
-                    `Código: ${s.cod}`,
-                    `Descrição: ${s.desc}`,
-                    `Faturamento: ${BRL(s.valor)}`,
-                    `Quantidade: ${NUM(s.qtd)} peças`,
-                    `Preço Médio: ${BRL(avg)}`
-                ];
-            }
-        }
-    };
-
-    /* Top Peças (Valor) */
-    const topItemsValor = Object.entries(statsByItem)
-        .sort((a, b) => b[1].valor - a[1].valor)
-        .slice(0, 20);
+    const itemValues = Array.from(itemMap.values())
+        .sort((a, b) => b.valor - a.valor)
+        .slice(0, 10);
 
     if (charts.valorItem) charts.valorItem.destroy();
     charts.valorItem = new Chart(document.getElementById('valorItemChart').getContext('2d'), {
         type: 'bar',
         data: { 
-            labels: topItemsValor.map(x => x[0]), 
+            labels: itemValues.map(x => x.desc), 
             datasets: [{ 
-                label: 'Faturamento (R$)', 
-                data: topItemsValor.map(x => x[1].valor), 
+                label: 'Valor Total (Custo)', 
+                data: itemValues.map(x => x.valor), 
                 backgroundColor: '#8b5cf6', 
-                borderWidth: 0, 
-                borderRadius: 6,
-                barPercentage: 0.75,
-                categoryPercentage: 0.85
+                borderRadius: 8 
             }] 
         },
         options: { 
             ...commonOpts, 
             indexAxis: 'y', 
-            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.valorItem, 'valorItem'),
-            scales: {
-                x: { grace: '22%' },
-                y: {
-                    ticks: { font: { size: 11, weight: '600' }, color: '#334155' }
-                }
-            },
             plugins: { 
                 ...commonOpts.plugins, 
                 legend: { display: false }, 
-                title: { display: true, text: 'Top 20 Peças (Valor R$)', font: { size: 14, weight: 'bold' } }, 
+                title: { display: true, text: 'Top 10 Itens por Valor Total' }, 
                 datalabels: { 
-                    display: true,
-                    align: 'end',
                     anchor: 'end',
-                    offset: 6,
-                    clip: false,
-                    color: '#6d28d9',
-                    font: { weight: 'bold', size: 11 },
-                    formatter: v => BRL(v)
-                }, 
-                tooltip: accessoryTooltip 
-            } 
-        }
-    });
-
-    /* Vendas por Loja (Tooltip detalhado) */
-    const statsByLoja = {};
-    rows.forEach(r => {
-        const k = r.Loja || 'Não informado';
-        if (!statsByLoja[k]) statsByLoja[k] = { valor: 0, qtd: 0 };
-        statsByLoja[k].valor += (+r.PrecoFinal || 0);
-        statsByLoja[k].qtd += (+r.Quantidade || 0);
-    });
-
-    const lojaArr = Object.entries(statsByLoja).sort((a, b) => b[1].valor - a[1].valor);
-    if (charts.loja) charts.loja.destroy();
-    charts.loja = new Chart(document.getElementById('lojaChart').getContext('2d'), {
-        type: 'bar',
-        plugins: [ChartDataLabels],
-        data: { labels: lojaArr.map(x => x[0]), datasets: [{ label: 'Vendas', data: lojaArr.map(x => x[1].valor), borderWidth: 2, borderRadius: 8 }] },
-        options: { 
-            ...commonOpts, 
-            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.loja, 'loja'),
-            scales: {
-                y: {
-                    grace: '20%'
-                }
-            },
-            plugins: { 
-                ...commonOpts.plugins, 
-                legend: { display: false }, 
-                title: { display: true, text: 'Vendas por Loja (Faturamento R$)' }, 
-                datalabels: {
-                    display: true,
-                    align: 'end',
-                    anchor: 'end',
-                    offset: 4,
-                    color: '#1e3a8a',
-                    font: { weight: 'bold', size: 11 },
+                    align: 'right',
+                    color: '#444',
+                    font: { weight: 'bold', size: 10 },
                     formatter: (v, ctx) => {
-                        const data = ctx.dataset.data || [];
-                        const total = data.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
-                        const pct = ((v / total) * 100).toFixed(1).replace('.', ',');
-                        return v > 0 ? `${BRL(v)} (${pct}%)` : 'R$ 0,00';
+                        const totalValor = itemValues.reduce((a, b) => a + b.valor, 0) || 1;
+                        const pct = ((v / totalValor) * 100).toFixed(1).replace('.', ',');
+                        return `${BRL(v)} (${pct}%)`;
                     }
                 },
                 tooltip: {
                     callbacks: {
-                        label: (context) => {
-                            const name = context.label;
-                            const s = statsByLoja[name] || { valor: 0, qtd: 0 };
-                            const avg = s.qtd ? s.valor / s.qtd : 0;
+                        label: (ctx) => {
+                            const item = itemValues[ctx.dataIndex];
                             return [
-                                `Faturamento: ${BRL(s.valor)}`,
-                                `Quantidade: ${NUM(s.qtd)}`,
-                                `Preço Médio: ${BRL(avg)}`
+                                `Código: ${item.cod}`,
+                                `Quantidade: ${NUM(item.qtd)}`,
+                                `Total: ${BRL(ctx.raw)}`
                             ];
                         }
                     }
-                }
-            } 
-        }
-    });
-
-    /* Top Peças (Quantidade) */
-    const topItemsQtd = Object.entries(statsByItem)
-        .sort((a, b) => b[1].qtd - a[1].qtd)
-        .slice(0, 20);
-
-    if (charts.modelo) charts.modelo.destroy();
-    charts.modelo = new Chart(document.getElementById('modeloChart').getContext('2d'), {
-        type: 'bar',
-        data: { 
-            labels: topItemsQtd.map(x => x[0]), 
-            datasets: [{ 
-                label: 'Qtd Vendida', 
-                data: topItemsQtd.map(x => x[1].qtd), 
-                backgroundColor: '#3b82f6', 
-                borderWidth: 0, 
-                borderRadius: 6,
-                barPercentage: 0.75,
-                categoryPercentage: 0.85
-            }] 
-        },
-        options: { 
-            ...commonOpts, 
-            indexAxis: 'y', 
-            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.modelo, 'modelo'),
-            scales: {
-                x: { grace: '22%' },
-                y: {
-                    ticks: { font: { size: 11, weight: '600' }, color: '#334155' }
-                }
+                } 
             },
-            plugins: { 
-                ...commonOpts.plugins, 
-                legend: { display: false }, 
-                title: { display: true, text: 'Top 20 Peças (Quantidade)', font: { size: 14, weight: 'bold' } }, 
-                datalabels: { 
-                    display: true,
-                    align: 'end',
-                    anchor: 'end',
-                    offset: 6,
-                    clip: false,
-                    color: '#1d4ed8',
-                    font: { weight: 'bold', size: 11 },
-                    formatter: (v, ctx) => {
-                        const data = ctx.dataset.data || [];
-                        const total = data.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
-                        const pct = ((v / total) * 100).toFixed(1).replace('.', ',');
-                        return `${NUM(v)} (${pct}%)`;
-                    }
-                }, 
-                tooltip: accessoryTooltip 
-            } 
+            layout: { padding: { right: 160 } }
         }
     });
 
-    /* Faixas de Preço */
-    const faixas = { 'Até R$ 50': 0, 'R$ 50–200': 0, 'R$ 200–500': 0, 'R$ 500–1000': 0, 'R$ 1000+': 0 };
-    rows.forEach(r => {
-        const v = +r.PrecoFinal || 0;
-        if (v <= 50) faixas['Até R$ 50']++;
-        else if (v <= 200) faixas['R$ 50–200']++;
-        else if (v <= 500) faixas['R$ 200–500']++;
-        else if (v <= 1000) faixas['R$ 500–1000']++;
-        else faixas['R$ 1000+']++;
-    });
-    if (charts.faixas) charts.faixas.destroy();
-    charts.faixas = new Chart(document.getElementById('faixasPrecoChart').getContext('2d'), {
-        type: 'bar',
-        data: { labels: Object.keys(faixas), datasets: [{ label: 'Qtd Itens', data: Object.values(faixas), backgroundColor: '#10b981', borderWidth: 2, borderRadius: 8 }] },
-        options: { 
-            ...commonOpts, 
-            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.faixas, 'faixas'),
-            plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Distribuição por Faixa de Preço' } } 
-        }
-    });
-
-    /* Vendas por Vendedor (Valor) */
-    const porVendVal = {}; rows.forEach(r => { const k = r.Vendedor || 'Não informado'; porVendVal[k] = (porVendVal[k] || 0) + (+r.PrecoFinal || 0); });
-    const vendValArr = Object.entries(porVendVal).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    if (charts.vendedorValor) charts.vendedorValor.destroy();
-    charts.vendedorValor = new Chart(document.getElementById('vendedorValorChart').getContext('2d'), {
-        type: 'bar',
-        data: { labels: vendValArr.map(x => x[0]), datasets: [{ label: 'Valor (R$)', data: vendValArr.map(x => x[1]), backgroundColor: '#f59e0b', borderWidth: 2, borderRadius: 8 }] },
-        options: { 
-            ...commonOpts, 
-            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.vendedorValor, 'vendedorValor'),
-            plugins: { ...commonOpts.plugins, legend: { display: false }, title: { display: true, text: 'Top 10 Vendedores (valor de venda)' }, datalabels: { ...datalabelsCenter(), formatter: v => BRL(v) } } 
-        }
-    });
-
-    /* Venda de Peças por Dias de Estoque */
-    const faixasDiasEstoque = {
-        'de 0 a 90 dias': { valor: 0, qtd: 0 },
-        'de 91 a 180 dias': { valor: 0, qtd: 0 },
-        'de 181 a 365 dias': { valor: 0, qtd: 0 },
-        'de 366 a 1000 dias': { valor: 0, qtd: 0 },
-        'acima de 1000 dias': { valor: 0, qtd: 0 }
-    };
+    // 4. Envelhecimento de Estoque (Aging) - Por Valor de Custo
+    const today = new Date();
+    const buckets = [
+        { label: 'de 0 a 90 dias', min: 0, max: 90, custo: 0, qtd: 0 },
+        { label: 'de 91 a 180 dias', min: 91, max: 180, custo: 0, qtd: 0 },
+        { label: 'de 181 a 365 dias', min: 181, max: 365, custo: 0, qtd: 0 },
+        { label: 'de 366 a 1000 dias', min: 366, max: 1000, custo: 0, qtd: 0 },
+        { label: 'acima de 1000 dias', min: 1001, max: Infinity, custo: 0, qtd: 0 }
+    ];
 
     rows.forEach(r => {
-        const g = +r.Giro || 0;
-        const v = +r.PrecoFinal || 0;
-        const q = +r.Quantidade || 0;
-
-        if (g >= 0 && g <= 90) {
-            faixasDiasEstoque['de 0 a 90 dias'].valor += v;
-            faixasDiasEstoque['de 0 a 90 dias'].qtd += q;
-        } else if (g >= 91 && g <= 180) {
-            faixasDiasEstoque['de 91 a 180 dias'].valor += v;
-            faixasDiasEstoque['de 91 a 180 dias'].qtd += q;
-        } else if (g >= 181 && g <= 365) {
-            faixasDiasEstoque['de 181 a 365 dias'].valor += v;
-            faixasDiasEstoque['de 181 a 365 dias'].qtd += q;
-        } else if (g >= 366 && g <= 1000) {
-            faixasDiasEstoque['de 366 a 1000 dias'].valor += v;
-            faixasDiasEstoque['de 366 a 1000 dias'].qtd += q;
-        } else if (g >= 1001) {
-            faixasDiasEstoque['acima de 1000 dias'].valor += v;
-            faixasDiasEstoque['acima de 1000 dias'].qtd += q;
+        const custoTotal = (+r.Quantidade || 0) * (+r.PrecoCusto || 0);
+        const qtdItem = (+r.Quantidade || 0);
+        if (!r.UltimaCompraDate) {
+            buckets[4].custo += custoTotal; 
+            buckets[4].qtd += qtdItem;
+            return;
+        }
+        const diffTime = today - r.UltimaCompraDate;
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        const b = buckets.find(b => diffDays >= b.min && diffDays <= b.max);
+        if (b) {
+            b.custo += custoTotal;
+            b.qtd += qtdItem;
+        } else if (diffDays > 1000) {
+            buckets[4].custo += custoTotal;
+            buckets[4].qtd += qtdItem;
         }
     });
 
-    const labelsDias = Object.keys(faixasDiasEstoque);
-    const valoresDias = labelsDias.map(k => faixasDiasEstoque[k].valor);
-    const coresDias = ['#5cb87a', '#5b85ee', '#e39f3c', '#db4d47', '#70757f'];
-    const totalValorDias = valoresDias.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+    const totalCustoAging = buckets.reduce((acc, curr) => acc + curr.custo, 0) || 1;
 
-    if (charts.diasEstoque) charts.diasEstoque.destroy();
-    charts.diasEstoque = new Chart(document.getElementById('diasEstoqueChart').getContext('2d'), {
+    if (charts.aging) charts.aging.destroy();
+    charts.aging = new Chart(document.getElementById('agingChart').getContext('2d'), {
         type: 'bar',
-        plugins: [ChartDataLabels],
-        data: { 
-            labels: labelsDias, 
-            datasets: [{ 
-                label: 'Faturamento (R$)', 
-                data: valoresDias, 
-                backgroundColor: coresDias, 
-                borderRadius: 8,
-                barPercentage: 0.75,
-                categoryPercentage: 0.85,
-                minBarLength: 10
-            }] 
+        data: {
+            labels: buckets.map(b => b.label),
+            datasets: [{
+                label: '',
+                data: buckets.map(b => b.custo),
+                backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#71717a'],
+                borderRadius: 8
+            }]
         },
-        options: { 
-            ...commonOpts, 
+        options: {
+            ...commonOpts,
             indexAxis: 'y',
-            onClick: (evt, elements) => onChartBarClick(evt, elements, charts.diasEstoque, 'diasEstoque'),
-            scales: {
-                x: {
-                    grace: '30%',
-                    grid: { color: '#f1f5f9' },
-                    ticks: {
-                        color: '#64748b',
-                        font: { size: 11 },
-                        callback: v => v.toLocaleString('pt-BR')
-                    }
-                },
-                y: {
-                    grid: { display: true, color: '#f8fafc' },
-                    ticks: {
-                        color: '#475569',
-                        font: { size: 11, weight: '500' }
-                    }
-                }
-            },
-            plugins: { 
-                ...commonOpts.plugins, 
+            plugins: {
+                ...commonOpts.plugins,
                 legend: { display: false },
-                title: { display: true, text: 'Dias de Estoque', font: { size: 14, weight: 'bold' }, color: '#334155' },
-                datalabels: {
-                    display: true,
-                    align: 'end',
-                    anchor: 'end',
-                    offset: 8,
-                    clip: false,
-                    color: '#2d3748',
-                    font: { weight: 'bold', size: 11 },
-                    formatter: (v) => {
-                        const pct = ((v / totalValorDias) * 100).toFixed(1).replace('.', ',');
-                        return v > 0 ? `${BRL(v)} (${pct}%)` : 'R$ 0,00 (0,0%)';
-                    }
-                },
+                title: { display: true, text: 'Dias de Estoque' },
                 tooltip: {
                     callbacks: {
-                        label: (context) => {
-                            const name = context.label;
-                            const s = faixasDiasEstoque[name] || { valor: 0, qtd: 0 };
-                            const pct = ((s.valor / totalValorDias) * 100).toFixed(1).replace('.', ',');
-                            const avg = s.qtd ? s.valor / s.qtd : 0;
+                        label: (ctx) => {
+                            const b = buckets[ctx.dataIndex];
+                            const pct = ((b.custo / totalCustoAging) * 100).toFixed(1).replace('.', ',');
                             return [
-                                `Faturamento: ${BRL(s.valor)} (${pct}%)`,
-                                `Quantidade: ${NUM(s.qtd)} peças`,
-                                `Preço Médio: ${BRL(avg)}`
+                                `${BRL(b.custo)}`,
+                                `Quantidade: ${NUM(b.qtd)} peças`,
+                                `Participação: ${pct}% do total`
                             ];
                         }
                     }
+                },
+                datalabels: {
+                    anchor: 'end',
+                    align: 'right',
+                    color: '#475569',
+                    offset: 8,
+                    font: { weight: 'bold', size: 11 },
+                    formatter: v => {
+                        if (v <= 0) return '';
+                        const pct = ((v / totalCustoAging) * 100).toFixed(1).replace('.', ',');
+                        return `${BRL(v)} (${pct}%)`;
+                    }
                 }
-            } 
+            },
+            layout: {
+                padding: { right: 160, left: 10 }
+            }
         }
+    });
+
+    // Desativar outros gráficos que não são mais necessários ou não têm dados correspondentes
+    ['modeloChart', 'faixasPrecoChart', 'vendedorChart', 'vendedorValorChart', 'tipoOsChart', 'vendasPorDiaChart'].forEach(id => {
+        const canvas = document.getElementById(id);
+        if (canvas) canvas.parentElement.style.display = 'none';
     });
 }
