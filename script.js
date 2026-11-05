@@ -398,7 +398,10 @@ function parseRows(headers, data) {
         })(),
         venda: findCol(headers, ['Venda', 'Data Venda', 'Data', 'DATA']),
         nota: findCol(headers, ['Nota', 'NF', 'NOTA']),
-        grupoInterno: 18, /* coluna S (índice 18) */
+        grupoInterno: (() => {
+            const c = findCol(headers, ['Grupo Interno', 'GRUPO INTERNO']);
+            return c >= 0 ? c : 16; /* coluna Q (índice 16) */
+        })(),
         qtdPecas: 7,     /* coluna H (índice 7) */
         giro: 2,         /* coluna C (índice 2) */
     };
